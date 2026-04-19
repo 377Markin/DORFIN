@@ -1,6 +1,17 @@
-from base_model import BaseModel
+from sqlalchemy import Column, Integer, String
+from config import Base
+from app.models.base_model import BaseModel
 
-class User(BaseModel):
+class User(BaseModel, Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String)
+    edad = Column(Integer)
+    altura = Column(Integer)
+    peso = Column(Integer)
+    meta = Column(String)
+    fecha_creacion = Column(String)
+    
     def __init__(self, nombre:str, edad:int, altura:int, peso:int, meta:str, email:str, contrasena:str, fecha_creacion:str):
         super().__init__(fecha_creacion)
         self.nombre = nombre
