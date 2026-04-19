@@ -8,8 +8,15 @@ class User(BaseModel):
         self.altura = altura
         self.peso = peso
         self.meta = meta
-        self.email = email
-        self.contrasena = contrasena
+        self.__email = email
+        self.__contrasena = contrasena
+    
+    @property
+    def email(self):
+        return self.__email
+    
+    def verificar_contrasena(self, contrasena_ingresada):
+        return self.__contrasena == contrasena_ingresada
     
     def __str__(self):
         return f"Hola {self.nombre}! estas listo para seguir cumpliendo tu objetivo {self.meta}?"
