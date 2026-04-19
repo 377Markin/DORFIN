@@ -13,4 +13,6 @@ class User(BaseModel):
     
     def __str__(self):
         return f"Hola {self.nombre}! estas listo para seguir cumpliendo tu objetivo {self.meta}?"
-
+    
+    def resumen(self):
+        return f'Nombre:\t\t{self.nombre}\nEdad:\t\t{self.edad}\nAltura:\t\t{self.altura}\nPeso:\t\t{self.peso}\nObjetivo:\t{self.meta}\nEmail:\t\t{self.email}\nFecha de creacion:\t{self.fecha_creacion}'

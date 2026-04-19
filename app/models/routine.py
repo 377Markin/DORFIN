@@ -9,6 +9,9 @@ class Routine(BaseModel):
     
     def __str__(self):
         return f"Split: {self.nombre}\nDia: {self.dia}\nejercicios: {self.ejercicios}"
+    
+    def resumen(self):
+        return f'Nombre del split:\t\t\t{self.nombre}\nDia:\t\t\t{self.dia}\nFecha de creacion\t\t\t{self.fecha_creacion}'
 
 
 

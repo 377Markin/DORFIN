@@ -4,3 +4,6 @@ class BaseModel:
         self.fecha_creacion = fecha_creacion
     def __str__(self):
         return f"Tu ID es: {self.id}\nFue creado en: {self.fecha_creacion}"
+    def resumen(self):
+        pass
+    

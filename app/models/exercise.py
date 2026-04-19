@@ -9,3 +9,7 @@ class Exercise(BaseModel):
     
     def __str__(self):
         return f'\nEJERCICIO: {self.nombre}\nMusculo: {self.musculo}\nDescripcion: {self.descripcion}'
+    
+    def resumen(self):
+        return f'Nombre del ejercicio:\t{self.nombre}\nMusculo que trabaja:\t{self.musculo}\nDescripcion del ejercicio:\t{self.descripcion}\nFecha de creacion:\t{self.fecha_creacion}'
+
