@@ -1,5 +1,8 @@
-class Exercise:
-    def __init__(self, nombre:str, musculo:str, descripcion:str):
+from base_model import BaseModel
+
+class Exercise(BaseModel):
+    def __init__(self, nombre:str, musculo:str, descripcion:str, fecha_creacion:str):
+        super().__init__(fecha_creacion)
         self.nombre = nombre
         self.musculo = musculo
         self.descripcion = descripcion

@@ -1,8 +1,10 @@
 from user import User
 from exercise import Exercise
+from base_model import BaseModel
 
-class TrainingLog:
-    def __init__(self, usuario:User, ejercicio:Exercise, series:int, repeticiones:str, rir:float, descanso:str, fecha:str, anotaciones:str = ('Sin anotaciones')):
+class TrainingLog(BaseModel):
+    def __init__(self, usuario:User, ejercicio:Exercise, series:int, repeticiones:str, rir:float, descanso:str, fecha:str, fecha_creacion:str, anotaciones:str = ('Sin anotaciones')):
+        super().__init__(fecha_creacion)
         self.usuario = usuario
         self.ejercicio = ejercicio
         self.series = series
