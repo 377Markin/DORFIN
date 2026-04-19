@@ -1,8 +1,21 @@
-from user import User
-from exercise import Exercise
-from base_model import BaseModel
+from config import Base
+from app.models.user import User
+from app.models.exercise import Exercise
+from app.models.base_model import BaseModel
+from sqlalchemy import Column, String, Integer, Float, Date
 
-class TrainingLog(BaseModel):
+class TrainingLog(BaseModel, Base):
+    __tablename__ = 'training_logs'
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer)
+    ejercicio_id = Column(Integer)
+    series = Column(Integer)
+    repeticiones = Column(String)
+    rir = Column(Float)
+    descanso = Column(String)
+    fecha = Column(Date)
+    fecha_creacion = Column(Date)
+    anotaciones = Column(String)
     def __init__(self, usuario:User, ejercicio:Exercise, series:int, repeticiones:str, rir:float, descanso:str, fecha:str, fecha_creacion:str, anotaciones:str = ('Sin anotaciones')):
         super().__init__(fecha_creacion)
         self.usuario = usuario

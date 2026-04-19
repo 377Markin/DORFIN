@@ -1,6 +1,15 @@
-from base_model import BaseModel
+from config import Base
+from sqlalchemy import Column, Integer, String, Date
+from app.models.base_model import BaseModel
 
-class Exercise(BaseModel):
+class Exercise(BaseModel, Base):
+    __tablename__ = 'exercises'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String)
+    musculo = Column(String)
+    descripcion = Column(String)
+    fecha_creacion = Column(Date)
+
     def __init__(self, nombre:str, musculo:str, descripcion:str, fecha_creacion:str):
         super().__init__(fecha_creacion)
         self.nombre = nombre

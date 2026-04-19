@@ -1,5 +1,6 @@
 from base_model import BaseModel
-from user import User
+from app.models.user import User
+from app.models.base_model import BaseModel
 
 class Mesociclo(BaseModel):
     def __init__(self, usuario:User, fecha_inicio:str, peso_inicial:int, fecha_creacion, id=None):

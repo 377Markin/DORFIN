@@ -1,6 +1,14 @@
-from base_model import BaseModel
+from config import Base
+from sqlalchemy import Column, Integer, String, Date
+from app.models.base_model import BaseModel
 
-class Routine(BaseModel):
+class Routine(BaseModel, Base):
+    __tablename__ = 'routines'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String)
+    dia = Column(Integer)
+    fecha_creacion = Column(Date)
+
     def __init__(self, nombre:str, dia:int, fecha_creacion:str):
         super().__init__(fecha_creacion)
         self.nombre = nombre
