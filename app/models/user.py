@@ -15,8 +15,22 @@ class User(BaseModel):
     def email(self):
         return self.__email
     
+    @email.setter
+    def email(self, nuevo_email):
+        self.__email = nuevo_email
+    
     def verificar_contrasena(self, contrasena_ingresada):
         return self.__contrasena == contrasena_ingresada
+    
+    def cambiar_contrasena(self,contrasena_actual, contrasena_nueva):
+        try:
+            if self.verificar_contrasena(contrasena_actual):
+                self.__contrasena = contrasena_nueva
+                return "Contraseña cambiada exitosamente"
+            else:
+                return "La contraseña no es correcta. Inténtalo de nuevo"
+        except Exception as e:
+            return f"Error: {e}"
     
     def __str__(self):
         return f"Hola {self.nombre}! estas listo para seguir cumpliendo tu objetivo {self.meta}?"
