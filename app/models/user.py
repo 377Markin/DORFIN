@@ -12,7 +12,7 @@ class User(BaseModel, Base):
     meta = Column(String)
     fecha_creacion = Column(String)
     
-    def __init__(self, nombre:str, edad:int, altura:int, peso:int, meta:str, email:str, contrasena:str, fecha_creacion:str):
+    def __init__(self, nombre:str, edad:int, altura:int, peso:int, meta:str, email:str, contrasena:str, fecha_creacion = None):
         super().__init__(fecha_creacion)
         self.nombre = nombre
         self.edad = edad
@@ -48,3 +48,15 @@ class User(BaseModel, Base):
     
     def resumen(self):
         return f'Nombre:\t\t{self.nombre}\nEdad:\t\t{self.edad}\nAltura:\t\t{self.altura}\nPeso:\t\t{self.peso}\nObjetivo:\t{self.meta}\nFecha de creacion:\t{self.fecha_creacion}'
+    
+    def saludar(self):
+        mensajes = {
+        "Hipertrofia": "¡Dale con toda a reventar esas fibras!",
+        "Bajar de peso": "¡A quemar grasa, nadie lo hará por ti!",
+        "Powerlifting": "¡Vamos máquina de mover peso!",
+        "Definicion": "¡No te rindas, ya casi se ven esos cortes!",
+        "Volumen": "¡Tu puedes, devorador de pollos!"
+    }
+        objetivo = self.meta.capitalize()
+        saludo = mensajes.get(objetivo, "¡A darle con toda, maquina!")
+        return f"{self.nombre}: {saludo}"
