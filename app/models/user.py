@@ -22,15 +22,15 @@ class User(BaseModel, Base):
         self.peso = peso
         self.meta = meta
         self.email = email
-        self.__contrasena = contrasena
+        self.contrasena = contrasena
     
     def verificar_contrasena(self, contrasena_ingresada):
-        return self.__contrasena == contrasena_ingresada
+        return self.contrasena == contrasena_ingresada
     
     def cambiar_contrasena(self,contrasena_actual, contrasena_nueva):
         try:
             if self.verificar_contrasena(contrasena_actual):
-                self.__contrasena = contrasena_nueva
+                self.contrasena = contrasena_nueva
                 return "Contraseña cambiada exitosamente"
             else:
                 return "La contraseña no es correcta. Inténtalo de nuevo"
