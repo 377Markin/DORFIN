@@ -3,6 +3,7 @@ from app.models.user import User
 from app.models.exercise import Exercise
 from app.models.base_model import BaseModel
 from sqlalchemy import Column, String, Integer, Float, Date
+from datetime import datetime
 
 class TrainingLog(BaseModel, Base):
     __tablename__ = 'training_logs'
@@ -16,15 +17,20 @@ class TrainingLog(BaseModel, Base):
     fecha = Column(Date)
     fecha_creacion = Column(Date)
     anotaciones = Column(String)
-    def __init__(self, usuario:User, ejercicio:Exercise, series:int, repeticiones:str, rir:float, descanso:str, fecha:str, fecha_creacion:str, anotaciones:str = ('Sin anotaciones')):
+    def __init__(self, usuario:User, ejercicio:Exercise, series:int, repeticiones:str, rir:float, descanso:str, fecha:str, fecha_creacion = None, anotaciones:str = ('Sin anotaciones')):
         super().__init__(fecha_creacion)
-        self.usuario = usuario
-        self.ejercicio = ejercicio
+        
+        if fecha is None:
+            self.fecha = datetime.now().strftime("%Y-%m-%d")
+        else:
+            self.fecha = fecha
+        
+        self.usuario_id = usuario.id
+        self.ejercicio_id = ejercicio.id
         self.series = series
         self.repeticiones = repeticiones
         self.rir = rir
         self.descanso = descanso
-        self.fecha = fecha 
         self.anotaciones = anotaciones
     def __str__(self):
-        return f'Bienvenido {self.usuario.nombre}\nEjercicio: \t{self.ejercicio.nombre}\nRepeticiones: \t{self.repeticiones}\nRIR: \t\t{self.rir}\nDescanso: \t{self.descanso}\nAnotaciones: \t{self.anotaciones}\nFecha: \t\t{self.fecha}'
+        return f'Bienvenido {self.usuario_id}\nEjercicio: \t{self.ejercicio_id}\nRepeticiones: \t{self.repeticiones}\nRIR: \t\t{self.rir}\nDescanso: \t{self.descanso}\nAnotaciones: \t{self.anotaciones}\nFecha: \t\t{self.fecha}'
