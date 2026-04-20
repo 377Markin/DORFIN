@@ -11,6 +11,8 @@ class User(BaseModel, Base):
     peso = Column(Integer)
     meta = Column(String)
     fecha_creacion = Column(String)
+    email = Column(String, unique=True, nullable=False)
+    contrasena = Column(String, nullable=False)
     
     def __init__(self, nombre:str, edad:int, altura:int, peso:int, meta:str, email:str, contrasena:str, fecha_creacion = None):
         super().__init__(fecha_creacion)
@@ -19,16 +21,8 @@ class User(BaseModel, Base):
         self.altura = altura
         self.peso = peso
         self.meta = meta
-        self.__email = email
+        self.email = email
         self.__contrasena = contrasena
-    
-    @property
-    def email(self):
-        return self.__email
-    
-    @email.setter
-    def email(self, nuevo_email):
-        self.__email = nuevo_email
     
     def verificar_contrasena(self, contrasena_ingresada):
         return self.__contrasena == contrasena_ingresada
