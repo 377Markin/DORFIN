@@ -28,6 +28,8 @@ def actualizar_usuario(id, nuevo_peso):
     db = SessionLocal()
     try:
         usuario = db.query(User).filter(User.id == id).first()
+        if usuario is None:
+            return "Usuario no encontrado"
         usuario.peso = nuevo_peso
         db.commit()
         return "Usuario actualizado exitosamente"
@@ -41,6 +43,8 @@ def eliminar_usuario(id):
     db = SessionLocal()
     try:
         usuario = db.query(User).filter(User.id == id).first()
+        if usuario is None:
+            return "Usuario no encontrado"
         db.delete(usuario)
         db.commit()
         return "Usuario borrado exitosamente"
