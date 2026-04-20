@@ -10,7 +10,7 @@ class Exercise(BaseModel, Base):
     descripcion = Column(String)
     fecha_creacion = Column(Date)
 
-    def __init__(self, nombre:str, musculo:str, descripcion:str, fecha_creacion:str):
+    def __init__(self, nombre:str, musculo:str, descripcion:str, fecha_creacion=None):
         super().__init__(fecha_creacion)
         self.nombre = nombre
         self.musculo = musculo

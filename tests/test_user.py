@@ -1,6 +1,6 @@
 import sys
 sys.path.insert(0, 'app/models')
-from user import User
+from app.models.user import User
 
 def test_verificar_contrasena_correcta():
     u = User("Mahicol", 19, 177, 97, "Hipertrofia", "mahi@gmail.com", "1234", "04/19/2026")
