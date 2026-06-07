@@ -144,10 +144,36 @@ def update_me(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    allowed = {"nombre", "edad", "altura", "peso", "meta"}
+    allowed = {"nombre", "edad", "altura", "peso", "meta", "foto_url"}
     for key, value in updates.items():
         if key in allowed:
             setattr(current_user, key, value)
     db.commit()
     db.refresh(current_user)
     return current_user
+
+from fastapi import UploadFile, File
+import base64
+
+@router.post("/me/foto")
+async def upload_foto(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Validar tipo
+    if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
+        raise HTTPException(status_code=400, detail="Solo se permiten imágenes JPG, PNG o WebP")
+    
+    # Leer y convertir a base64
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:  # 5MB max
+        raise HTTPException(status_code=400, detail="La imagen no puede superar 5MB")
+    
+    b64 = base64.b64encode(contents).decode("utf-8")
+    foto_url = f"data:{file.content_type};base64,{b64}"
+    
+    current_user.foto_url = foto_url
+    db.commit()
+    db.refresh(current_user)
+    return current_user.to_dict()

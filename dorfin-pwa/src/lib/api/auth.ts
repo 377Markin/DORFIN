@@ -42,4 +42,13 @@ checkEmail: async (email: string): Promise<{ exists: boolean }> => {
   const { data } = await apiClient.post('/auth/check-email', { email })
   return data
 },
+
+uploadFoto: async (file: File): Promise<{ foto_url: string }> => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await apiClient.post('/auth/me/foto', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return data
+},
 }

@@ -3,11 +3,11 @@ export interface User {
   id: number
   nombre: string
   email: string
-  /** ISO date string 'YYYY-MM-DD' — la edad se calcula dinámicamente */
   fecha_nacimiento?: string
   altura?: number
   peso?: number
   meta?: string
+  foto_url?: string
   fecha_creacion?: string
 }
 

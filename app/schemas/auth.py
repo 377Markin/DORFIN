@@ -40,6 +40,7 @@ class UserResponse(BaseModel):
     altura: Optional[int] = None
     peso: Optional[int] = None
     meta: Optional[str] = None
+    foto_url: Optional[str] = None
     fecha_creacion: Optional[str] = None
 
     class Config:

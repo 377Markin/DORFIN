@@ -73,9 +73,7 @@ export default function AuthPage() {
           transition={{ type: 'spring', stiffness: 200, damping: 15 }}
           className="relative mb-6"
         >
-          <div className="w-28 h-28 rounded-full bg-dorfin-green-glow border-2 border-dorfin-green/30 flex items-center justify-center animate-pulse-green">
-            <Flame size={52} className="text-dorfin-green animate-flame" />
-          </div>
+          <img src="/dorfin-mascot.png" alt="Dorfin" className="w-40 h-40 object-contain drop-shadow-lg" />
         </motion.div>
 
         <motion.h1

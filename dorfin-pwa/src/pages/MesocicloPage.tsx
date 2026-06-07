@@ -228,16 +228,16 @@ export default function MesocicloPage() {
         {isLoading ? (
           <><Skeleton className="h-28 w-full" /><Skeleton className="h-52 w-full" /></>
         ) : !meso ? (
-          <EmptyState
-            icon="📅"
-            title="Sin mesociclo activo"
-            subtitle="Crea tu primer ciclo de entrenamiento"
-            action={
-              <button onClick={() => setShowCreate(true)} className="btn-primary">
-                <Plus size={16} className="inline mr-2" /> Crear mesociclo
-              </button>
-            }
-          />
+          <div className="flex flex-col items-center gap-4 py-8">
+            <img src="/dorfin-medidas.png" alt="Dorfin" className="w-48 h-48 object-contain drop-shadow-lg" />
+            <div className="text-center">
+              <p className="text-dorfin-text font-semibold text-lg">Sin mesociclo activo</p>
+              <p className="text-dorfin-muted text-sm mt-1">Crea tu primer ciclo de entrenamiento</p>
+            </div>
+            <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Crear mesociclo
+            </button>
+          </div>
         ) : (
           <>
             {/* Header */}

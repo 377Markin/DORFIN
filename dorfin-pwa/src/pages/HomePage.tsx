@@ -23,14 +23,9 @@ export default function HomePage() {
         initial={{ y: -10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 120 }}
-        className="flex justify-center py-4"
+        className="flex justify-center py-2"
       >
-        <div className="relative w-36 h-36">
-          <div className="absolute inset-0 rounded-full bg-dorfin-green/10 animate-pulse-green" />
-          <div className="w-full h-full rounded-full bg-gradient-to-br from-dorfin-surface to-dorfin-card border-2 border-dorfin-green/30 flex items-center justify-center">
-            <Flame size={64} className="text-dorfin-green animate-flame" />
-          </div>
-        </div>
+        <img src="/dorfin-analitico.png" alt="Dorfin" className="w-44 h-44 object-contain drop-shadow-lg" />
       </motion.div>
 
       {/* Stats Grid */}

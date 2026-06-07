@@ -15,10 +15,11 @@ class User(BaseModel, Base):
     fecha_creacion = Column(String)
     email = Column(String, unique=True, nullable=False, index=True)
     contrasena = Column(String, nullable=False)
+    foto_url = Column(String, nullable=True)
 
     def __init__(self, nombre: str, email: str, contrasena: str,
-                 fecha_nacimiento: str = None, altura: int = None, peso: int = None,
-                 meta: str = None, fecha_creacion=None):
+                    fecha_nacimiento: str = None, altura: int = None, peso: int = None,
+                    meta: str = None, fecha_creacion=None, foto_url: str = None):
         super().__init__(fecha_creacion)
         self.nombre = nombre
         self.email = email
@@ -27,6 +28,7 @@ class User(BaseModel, Base):
         self.altura = altura
         self.peso = peso
         self.meta = meta
+        self.foto_url = foto_url
 
     def to_dict(self):
         return {
@@ -37,6 +39,7 @@ class User(BaseModel, Base):
             "altura": self.altura,
             "peso": self.peso,
             "meta": self.meta,
+            "foto_url": self.foto_url,
             "fecha_creacion": str(self.fecha_creacion) if self.fecha_creacion else None,
         }
 

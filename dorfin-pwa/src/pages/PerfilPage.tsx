@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { User, LogOut, Dumbbell, Star, TrendingUp, Award, Settings, X, Check, Trash2, ChevronRight } from 'lucide-react'
+import { User as UserIcon, LogOut, Dumbbell, Star, TrendingUp, Award, Settings, X, Check, Trash2, ChevronRight } from 'lucide-react'
 import { useStats, useLogout } from '@/lib/hooks'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { Skeleton } from '@/components/shared'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import apiClient from '@/lib/api/client'
+import { authApi } from '@/lib/api/auth'
 import { trainingLogsApi } from '@/lib/api'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
@@ -377,12 +378,31 @@ export default function PerfilPage() {
 
         <div className="flex items-start gap-4 mb-6">
           <div className="relative">
-            <div className="w-20 h-20 rounded-full bg-dorfin-surface border-2 border-dorfin-purple flex items-center justify-center">
-              <User size={36} className="text-dorfin-muted" />
+            <div className="w-20 h-20 rounded-full bg-dorfin-surface border-2 border-dorfin-purple overflow-hidden flex items-center justify-center">
+              {user?.foto_url
+                ? <img src={user.foto_url} alt="foto" className="w-full h-full object-cover" />
+                : <UserIcon size={36} className="text-dorfin-muted" />
+              }
             </div>
-            <div className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-dorfin-green border-2 border-dorfin-bg flex items-center justify-center">
+            <label className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-dorfin-green border-2 border-dorfin-bg flex items-center justify-center cursor-pointer">
               <span className="text-dorfin-bg text-[10px] font-bold">✎</span>
-            </div>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  try {
+                    const result = await authApi.uploadFoto(file)
+                    updateUser({ foto_url: result.foto_url })
+                    toast.success('Foto actualizada')
+                  } catch {
+                    toast.error('Error al subir la foto')
+                  }
+                }}
+              />
+            </label>
           </div>
           <div className="flex-1 pt-2">
             <h1 className="font-display text-3xl text-dorfin-text">{user?.nombre?.toUpperCase()}</h1>
