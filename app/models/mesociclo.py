@@ -1,16 +1,46 @@
-from app.models.user import User
+from sqlalchemy import Column, Integer, String, Float, JSON
+from config import Base
 from app.models.base_model import BaseModel
 
-class Mesociclo(BaseModel):
-    def __init__(self, usuario:User, fecha_inicio:str, peso_inicial:int, fecha_creacion, id=None):
-        super().__init__(fecha_creacion, id)
-        self.usuario = usuario
+
+class Mesociclo(BaseModel, Base):
+    __tablename__ = 'mesociclos'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    usuario_id = Column(Integer, nullable=False, index=True)
+    fecha_inicio = Column(String, nullable=False)
+    peso_inicial = Column(Float)
+    medidas = Column(JSON, default={})
+    meta = Column(String, default='Hipertrofia')
+    duracion_semanas = Column(Integer, default=4)
+    frecuencia_medidas = Column(String, default='semanal')
+    historial_medidas = Column(JSON, default=[])
+    fecha_creacion = Column(String)
+
+    def __init__(self, usuario_id, fecha_inicio, peso_inicial=None,
+                    medidas=None, meta='Hipertrofia', duracion_semanas=4,
+                    frecuencia_medidas='semanal', historial_medidas=None,
+                    fecha_creacion=None):
+        super().__init__(fecha_creacion)
+        self.usuario_id = usuario_id
         self.fecha_inicio = fecha_inicio
         self.peso_inicial = peso_inicial
-        self.medidas = {}
-    def __str__(self):
-        return f'Usuario: {self.usuario.nombre}\ninicio del mesociclo: {self.fecha_inicio}\nPeso inicial: {self.peso_inicial}kg'
-    
-    def resumen(self):
-        return f'Nombre de usuario:\t\t\t{self.usuario.nombre}\nFecha que inicio el mesociclo:\t\t\t{self.fecha_inicio}\nPeso con el que iniciaste\t\t\t{self.peso_inicial}\nEsta informacion la actualizaste en\t\t\t{self.fecha_creacion}'
+        self.medidas = medidas or {}
+        self.meta = meta
+        self.duracion_semanas = duracion_semanas
+        self.frecuencia_medidas = frecuencia_medidas
+        self.historial_medidas = historial_medidas or []
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "usuario_id": self.usuario_id,
+            "fecha_inicio": self.fecha_inicio,
+            "peso_inicial": self.peso_inicial,
+            "medidas": self.medidas or {},
+            "meta": self.meta,
+            "duracion_semanas": self.duracion_semanas,
+            "frecuencia_medidas": self.frecuencia_medidas,
+            "historial_medidas": self.historial_medidas or [],
+            "fecha_creacion": str(self.fecha_creacion) if self.fecha_creacion else None,
+        }
