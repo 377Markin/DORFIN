@@ -1,36 +1,51 @@
-from config import Base
-from app.models.user import User
-from app.models.exercise import Exercise
-from app.models.base_model import BaseModel
 from sqlalchemy import Column, String, Integer, Float, Date
 from datetime import datetime
+from config import Base
+from app.models.base_model import BaseModel
+
 
 class TrainingLog(BaseModel, Base):
     __tablename__ = 'training_logs'
-    id = Column(Integer, primary_key=True)
-    usuario_id = Column(Integer)
-    ejercicio_id = Column(Integer)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    usuario_id = Column(Integer, nullable=False, index=True)
+    ejercicio_id = Column(Integer, nullable=False, index=True)
     series = Column(Integer)
     repeticiones = Column(String)
     rir = Column(Float)
     descanso = Column(String)
     fecha = Column(Date)
     fecha_creacion = Column(Date)
-    anotaciones = Column(String)
-    def __init__(self, usuario:User, ejercicio:Exercise, series:int, repeticiones:str, rir:float, descanso:str, fecha:str, fecha_creacion = None, anotaciones:str = ('Sin anotaciones')):
+    anotaciones = Column(String, default='Sin anotaciones')
+    nombre_ejercicio = Column(String, nullable=True)
+
+    def __init__(self, usuario_id: int, ejercicio_id: int, series: int,
+                    repeticiones: str, rir: float, descanso: str,
+                    fecha: str = None, fecha_creacion=None,
+                    anotaciones: str = 'Sin anotaciones',
+                    nombre_ejercicio: str = None):
         super().__init__(fecha_creacion)
-        
-        if fecha is None:
-            self.fecha = datetime.now().strftime("%Y-%m-%d")
-        else:
-            self.fecha = fecha
-        
-        self.usuario_id = usuario.id
-        self.ejercicio_id = ejercicio.id
+        self.usuario_id = usuario_id
+        self.ejercicio_id = ejercicio_id
         self.series = series
         self.repeticiones = repeticiones
         self.rir = rir
         self.descanso = descanso
         self.anotaciones = anotaciones
-    def __str__(self):
-        return f'Bienvenido {self.usuario_id}\nEjercicio: \t{self.ejercicio_id}\nRepeticiones: \t{self.repeticiones}\nRIR: \t\t{self.rir}\nDescanso: \t{self.descanso}\nAnotaciones: \t{self.anotaciones}\nFecha: \t\t{self.fecha}'
+        self.nombre_ejercicio = nombre_ejercicio
+        self.fecha = fecha or datetime.now().strftime("%Y-%m-%d")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "usuario_id": self.usuario_id,
+            "ejercicio_id": self.ejercicio_id,
+            "series": self.series,
+            "repeticiones": self.repeticiones,
+            "rir": self.rir,
+            "descanso": self.descanso,
+            "fecha": str(self.fecha) if self.fecha else None,
+            "anotaciones": self.anotaciones,
+            "nombre_ejercicio": self.nombre_ejercicio,
+            "fecha_creacion": str(self.fecha_creacion) if self.fecha_creacion else None,
+        }
