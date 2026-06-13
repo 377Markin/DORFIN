@@ -54,6 +54,16 @@ export const trainingLogsApi = {
       logs: { fecha: string; peso: number; repeticiones: number; rir: number; series: number }[]
     }
   },
+  getHistorialSemanal: async () => {
+    const { data } = await apiClient.get('/training-logs/historial/semanal')
+    return data as {
+      semana_inicio: string
+      dias: {
+        fecha: string
+        ejercicios: { nombre: string; peso: number; repeticiones: number; rir: number; series: number }[]
+      }[]
+    }[]
+  },
   getHistorialPorNombre: async (nombre: string) => {
     const { data } = await apiClient.get(`/training-logs/ejercicio/nombre/${encodeURIComponent(nombre)}/historial`)
     return data as {

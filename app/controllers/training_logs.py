@@ -340,6 +340,58 @@ def get_historial_por_nombre(
         ]
     }
 
+@router.get("/historial/semanal")
+def get_historial_semanal(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Logs agrupados por semana y fecha para el historial completo."""
+    from collections import defaultdict
+    
+    logs = (
+        db.query(TrainingLog)
+        .filter(
+            TrainingLog.usuario_id == current_user.id,
+            TrainingLog.ejercicio_id != 0,  # Excluir días de descanso
+        )
+        .order_by(TrainingLog.fecha.desc(), TrainingLog.id.desc())
+        .all()
+    )
+
+    # Agrupar por semana → fecha → ejercicios
+    semanas: dict = defaultdict(lambda: defaultdict(list))
+    for log in logs:
+        if not log.fecha:
+            continue
+        try:
+            log_date = log.fecha if isinstance(log.fecha, date) else date.fromisoformat(str(log.fecha))
+            week_start = log_date - timedelta(days=log_date.weekday())
+            week_key = str(week_start)
+            date_key = str(log_date)
+            semanas[week_key][date_key].append({
+                "nombre": _get_nombre_ejercicio(db, log.ejercicio_id, log),
+                "peso": _parse_peso(log.anotaciones),
+                "repeticiones": int(str(log.repeticiones).split(",")[0]) if log.repeticiones else 0,
+                "rir": log.rir,
+                "series": log.series,
+            })
+        except Exception:
+            pass
+
+    resultado = []
+    for week_key in sorted(semanas.keys(), reverse=True):
+        dias = []
+        for date_key in sorted(semanas[week_key].keys(), reverse=True):
+            dias.append({
+                "fecha": date_key,
+                "ejercicios": semanas[week_key][date_key]
+            })
+        resultado.append({
+            "semana_inicio": week_key,
+            "dias": dias,
+        })
+
+    return resultado
 
 @router.delete("/{log_id}", status_code=204)
 def delete_log(

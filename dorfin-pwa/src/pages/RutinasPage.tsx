@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Dumbbell, Moon, Trash2, X, Check } from 'lucide-react'
+import { Plus, Dumbbell, Moon, Trash2, X, Check, History, ChevronDown, ChevronUp } from 'lucide-react'
 import { useRoutines, useCreateRoutine, useDeleteRoutine } from '@/lib/hooks'
-import { useMutation } from '@tanstack/react-query'
-import { routinesApi } from '@/lib/api'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { routinesApi, trainingLogsApi } from '@/lib/api'
 import { EmptyState, Skeleton, PageHeader } from '@/components/shared'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -18,14 +18,162 @@ const MUSCLE_GROUPS = [
   'Descanso',
 ]
 
+function formatFecha(dateStr: string) {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
+function formatSemana(dateStr: string) {
+  const inicio = new Date(dateStr + 'T00:00:00')
+  const fin = new Date(inicio)
+  fin.setDate(fin.getDate() + 6)
+  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+  return `${inicio.getDate()} ${meses[inicio.getMonth()]} — ${fin.getDate()} ${meses[fin.getMonth()]} ${fin.getFullYear()}`
+}
+
+function HistorialSheet({ onClose }: { onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['historial-semanal'],
+    queryFn: () => trainingLogsApi.getHistorialSemanal(),
+    staleTime: 0,
+  })
+
+  const [semanaAbierta, setSemanaAbierta] = useState<string | null>(
+    data?.[0]?.semana_inicio ?? null
+  )
+
+  useEffect(() => {
+    if (data && data.length > 0 && !semanaAbierta) {
+      setSemanaAbierta(data[0].semana_inicio)
+    }
+  }, [data])
+
+  // Agrupar semanas por mes
+  const porMes: Record<string, typeof data> = {}
+  data?.forEach(semana => {
+    const d = new Date(semana.semana_inicio + 'T00:00:00')
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    if (!porMes[key]) porMes[key] = []
+    porMes[key]!.push(semana)
+  })
+
+  const mesesNombres = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+  return (
+    <>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/60 z-[60]" onClick={onClose} />
+      <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        className="fixed bottom-0 left-0 right-0 z-[70] bg-dorfin-card rounded-t-3xl p-6 pb-10 max-w-md mx-auto max-h-[85vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-dorfin-text font-display text-2xl">HISTORIAL</h2>
+            <p className="text-dorfin-muted text-xs mt-0.5">Tu evolución semana a semana</p>
+          </div>
+          <button onClick={onClose}><X size={20} className="text-dorfin-muted" /></button>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}
+          </div>
+        ) : !data || data.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-4xl mb-3">📭</p>
+            <p className="text-dorfin-text font-semibold">Sin entrenos aún</p>
+            <p className="text-dorfin-faint text-sm mt-1">Completa tu primera sesión para ver el historial</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {Object.entries(porMes).sort(([a], [b]) => b.localeCompare(a)).map(([mesKey, semanas]) => {
+              const [año, mes] = mesKey.split('-')
+              const nombreMes = mesesNombres[parseInt(mes) - 1]
+              return (
+                <div key={mesKey}>
+                  <p className="text-dorfin-green text-xs font-bold uppercase tracking-widest mb-3">
+                    {nombreMes} {año}
+                  </p>
+                  <div className="space-y-2">
+                    {semanas!.map(semana => {
+                      const abierta = semanaAbierta === semana.semana_inicio
+                      const totalEjercicios = semana.dias.reduce((acc, d) => acc + d.ejercicios.length, 0)
+                      return (
+                        <div key={semana.semana_inicio} className="card border-dorfin-border overflow-hidden">
+                          <button
+                            onClick={() => setSemanaAbierta(abierta ? null : semana.semana_inicio)}
+                            className="w-full p-4 flex items-center justify-between"
+                          >
+                            <div className="text-left">
+                              <p className="text-dorfin-text text-sm font-semibold">
+                                {formatSemana(semana.semana_inicio)}
+                              </p>
+                              <p className="text-dorfin-faint text-xs mt-0.5">
+                                {semana.dias.length} días · {totalEjercicios} series
+                              </p>
+                            </div>
+                            {abierta
+                              ? <ChevronUp size={16} className="text-dorfin-muted" />
+                              : <ChevronDown size={16} className="text-dorfin-muted" />
+                            }
+                          </button>
+
+                          <AnimatePresence>
+                            {abierta && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden border-t border-dorfin-border"
+                              >
+                                <div className="p-4 space-y-4">
+                                  {semana.dias.map(dia => (
+                                    <div key={dia.fecha}>
+                                      <p className="text-dorfin-muted text-xs tracking-widest mb-2 capitalize">
+                                        {formatFecha(dia.fecha)}
+                                      </p>
+                                      <div className="space-y-1.5">
+                                        {dia.ejercicios.map((ej, i) => (
+                                          <div key={i} className="flex items-center justify-between py-1.5 border-b border-dorfin-border/50 last:border-0">
+                                            <span className="text-dorfin-text text-sm font-medium">{ej.nombre}</span>
+                                            <span className="text-dorfin-faint text-xs">
+                                              {ej.peso > 0 ? `${ej.peso}kg` : '—'} × {ej.repeticiones}r · RIR {ej.rir}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </motion.div>
+    </>
+  )
+}
+
 export default function RutinasPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: routines, isLoading } = useRoutines()
   const qc = useQueryClient()
+  const [showHistorial, setShowHistorial] = useState(false)
+
   useEffect(() => {
     qc.invalidateQueries({ queryKey: ['routines'] })
   }, [])
+
   const createMutation = useCreateRoutine()
   const deleteMutation = useDeleteRoutine()
   const registrarDescansoMutation = useMutation({
@@ -57,7 +205,16 @@ export default function RutinasPage() {
   return (
     <div className="min-h-dvh bg-dorfin-bg pb-24">
       <div className="px-5 pt-14">
-        <PageHeader title="DORFIN" subtitle="Tus rutinas de entrenamiento" />
+        <div className="flex items-start justify-between">
+          <PageHeader title="DORFIN" subtitle="Tus rutinas de entrenamiento" />
+          <button
+            onClick={() => setShowHistorial(true)}
+            className="mt-1 p-2 rounded-xl hover:bg-dorfin-surface transition-colors flex items-center gap-1.5 text-dorfin-muted hover:text-dorfin-text"
+          >
+            <History size={18} />
+            <span className="text-xs font-medium">Historial</span>
+          </button>
+        </div>
       </div>
 
       <div className="px-5 space-y-3">
@@ -86,9 +243,7 @@ export default function RutinasPage() {
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: i * 0.06 }}
-                onClick={() => {
-                  if (!isRest) navigate(`/rutinas/${routine.id}`)
-                }}
+                onClick={() => { if (!isRest) navigate(`/rutinas/${routine.id}`) }}
                 className={`relative rounded-2xl p-5 border-2 cursor-pointer transition-all active:scale-[0.98] ${
                   isFirst
                     ? 'bg-dorfin-green border-transparent'
@@ -113,10 +268,7 @@ export default function RutinasPage() {
                     </h3>
                     {isRest && !isRestDone && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          registrarDescansoMutation.mutate(routine.id)
-                        }}
+                        onClick={(e) => { e.stopPropagation(); registrarDescansoMutation.mutate(routine.id) }}
                         className="mt-2 text-xs bg-dorfin-bg/20 hover:bg-dorfin-bg/30 text-dorfin-bg border border-dorfin-bg/20 rounded-lg px-3 py-1 transition-colors"
                       >
                         ✓ Registrar descanso de hoy
@@ -126,7 +278,6 @@ export default function RutinasPage() {
                       <p className="text-dorfin-bg/70 text-xs mt-1">✓ Descanso registrado hoy</p>
                     )}
                   </div>
-
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(routine.id) }}
                     className={`p-2 rounded-lg transition-colors ${isFirst ? 'hover:bg-black/10' : 'hover:bg-dorfin-surface'}`}
@@ -163,25 +314,16 @@ export default function RutinasPage() {
                   <X size={18} className="text-dorfin-muted" />
                 </button>
               </div>
-
               <div className="grid grid-cols-4 gap-2">
                 <div className="col-span-1">
                   <label className="text-dorfin-muted text-xs mb-1 block">Día #</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={dia}
+                  <input type="number" min={1} value={dia}
                     onChange={(e) => setDia(Number(e.target.value))}
-                    className="input-field text-center"
-                  />
+                    className="input-field text-center" />
                 </div>
                 <div className="col-span-3">
                   <label className="text-dorfin-muted text-xs mb-1 block">Grupo muscular</label>
-                  <select
-                    value={nombre}
-                    onChange={(e) => setNombre(e.target.value)}
-                    className="input-field"
-                  >
+                  <select value={nombre} onChange={(e) => setNombre(e.target.value)} className="input-field">
                     <option value="">Escribe abajo o selecciona</option>
                     {MUSCLE_GROUPS.map((g) => (
                       <option key={g} value={g}>{g}</option>
@@ -189,25 +331,21 @@ export default function RutinasPage() {
                   </select>
                 </div>
               </div>
-
-              <input
-                placeholder="O escribe un nombre personalizado"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                className="input-field"
-              />
-
-              <button
-                onClick={handleCreate}
+              <input placeholder="O escribe un nombre personalizado" value={nombre}
+                onChange={(e) => setNombre(e.target.value)} className="input-field" />
+              <button onClick={handleCreate}
                 disabled={createMutation.isPending || !nombre.trim()}
-                className="btn-primary w-full flex items-center justify-center gap-2"
-              >
+                className="btn-primary w-full flex items-center justify-center gap-2">
                 <Check size={18} /> Crear día
               </button>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {showHistorial && <HistorialSheet onClose={() => setShowHistorial(false)} />}
+      </AnimatePresence>
     </div>
   )
 }

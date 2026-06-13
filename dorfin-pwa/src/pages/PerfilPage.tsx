@@ -84,19 +84,21 @@ function HistorialEjercicioModal({ pr, onClose }: { pr: PersonalRecord; onClose:
   })
 
   const logs = data?.logs ?? []
-  const maxPeso = Math.max(...logs.map(l => l.peso), 1)
   const w = 280, h = 100
+
+  // Definir primero, usar después
+  const volumen = (log: { peso: number; repeticiones: number }) => log.peso * log.repeticiones
+  const volumenes = logs.map(volumen)
+  const maxVol = Math.max(...volumenes, 1)
+  const pct = logs.length >= 2
+    ? Math.round(((volumenes[volumenes.length-1] - volumenes[0]) / (volumenes[0] || 1)) * 100)
+    : 0
 
   const pts = logs.map((l, i) => ({
     x: (i / (logs.length - 1 || 1)) * w,
-    y: h - (l.peso / maxPeso) * h * 0.85,
+    y: h - (volumen(l) / maxVol) * h * 0.85,
   }))
   const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-  // Progreso basado en volumen (peso × reps) no solo kg
-  const volumen = (log: { peso: number; repeticiones: number }) => log.peso * log.repeticiones
-  const pct = logs.length >= 2
-    ? Math.round(((volumen(logs[logs.length-1]) - volumen(logs[0])) / (volumen(logs[0]) || 1)) * 100)
-    : 0
 
   return (
     <>
@@ -137,7 +139,7 @@ function HistorialEjercicioModal({ pr, onClose }: { pr: PersonalRecord; onClose:
             {/* Gráfico de progreso de peso */}
             {logs.length >= 2 && (
               <div className="card p-4 mb-4">
-                <p className="text-dorfin-muted text-xs uppercase tracking-widest mb-3">Evolución de peso</p>
+                <p className="text-dorfin-muted text-xs uppercase tracking-widest mb-3">Evolución de progreso</p>
                 <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: 100 }}>
                   <defs>
                     <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
@@ -166,13 +168,11 @@ function HistorialEjercicioModal({ pr, onClose }: { pr: PersonalRecord; onClose:
     // Progreso real: subir reps o bajar RIR con mismo peso también es progreso
     const hayProgreso = prev && (
       (diffPeso !== null && diffPeso > 0) ||
-      (diffReps !== null && diffReps > 0) ||
-      (diffRir !== null && diffRir < 0)
+      (diffReps !== null && diffReps > 0)
     )
-    const hayRegresion = prev && !hayProgreso && (
+    const hayRegresion = prev && (
       (diffPeso !== null && diffPeso < 0) ||
-      (diffReps !== null && diffReps < 0) ||
-      (diffRir !== null && diffRir > 0)
+      (diffReps !== null && diffReps < 0)
     )
 
     return (

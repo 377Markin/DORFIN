@@ -142,6 +142,7 @@ export default function EjercicioPage() {
   // Busca último log por nombre para compartir historial entre días
   const { data: ultimoLogNombre } = useQuery({
     queryKey: ['ultimo-log-nombre', exercise?.nombre],
+    staleTime: 0,
     queryFn: async () => {
       if (!exercise?.nombre) return null
       const historial = await trainingLogsApi.getHistorialPorNombre(exercise.nombre)
