@@ -164,3 +164,17 @@ def registrar_descanso(
     db.commit()
     db.refresh(routine)
     return routine.to_dict()
+
+@router.post("/reset-ciclo", response_model=List[RoutineResponse])
+def reset_ciclo(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resetea todas las rutinas del usuario a no completado."""
+    rutinas = db.query(Routine).filter(
+        Routine.usuario_id == current_user.id
+    ).all()
+    for r in rutinas:
+        r.completado_fecha = None
+    db.commit()
+    return [r.to_dict() for r in rutinas]

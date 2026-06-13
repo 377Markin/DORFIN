@@ -170,6 +170,36 @@ export default function RutinasPage() {
   const qc = useQueryClient()
   const [showHistorial, setShowHistorial] = useState(false)
 
+// Detectar ciclo completo y resetear después de 5 horas
+  const CICLO_KEY = `dorfin-ciclo-completado-u${routines?.[0]?.usuario_id}`
+  
+  useEffect(() => {
+    if (!routines || routines.length === 0) return
+    
+    const todosCompletos = routines.every(r => r.completado_hoy === true)
+    
+    if (todosCompletos) {
+      const yaGuardado = localStorage.getItem(CICLO_KEY)
+      if (!yaGuardado) {
+        // Guardar momento en que se completó el ciclo
+        localStorage.setItem(CICLO_KEY, String(Date.now()))
+      } else {
+        const completadoEn = parseInt(yaGuardado)
+        const cincoHoras = 5 * 60 * 60 * 1000
+        if (Date.now() - completadoEn >= cincoHoras) {
+          // Han pasado 5 horas — resetear
+          localStorage.removeItem(CICLO_KEY)
+          routinesApi.resetCiclo().then(() => {
+            qc.invalidateQueries({ queryKey: ['routines'] })
+          })
+        }
+      }
+    } else {
+      // Si no todos están completos, limpiar el timer
+      localStorage.removeItem(CICLO_KEY)
+    }
+  }, [routines])
+
   useEffect(() => {
     qc.invalidateQueries({ queryKey: ['routines'] })
   }, [])

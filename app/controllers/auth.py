@@ -1,4 +1,3 @@
-import resend
 import os
 import random
 import string
@@ -217,24 +216,40 @@ def solicitar_reset(body: SolicitarResetRequest, db: Session = Depends(get_db)):
     db.add(reset)
     db.commit()
 
-    # Enviar email con Resend
-    resend.api_key = os.getenv("RESEND_API_KEY")
-    resend.Emails.send({
-        "from": "DORFIN <onboarding@resend.dev>",
-        "to": user.email,
-        "subject": "Código de verificación DORFIN",
-        "html": f"""
-        <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 24px;">
-            <h2 style="color: #39FF14;">DORFIN</h2>
-            <p>Tu código para restablecer la contraseña es:</p>
-            <div style="background: #1a1a2e; border: 2px solid #39FF14; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
-                <span style="font-size: 48px; font-weight: bold; color: #39FF14; letter-spacing: 8px;">{codigo}</span>
-            </div>
-            <p style="color: #888;">Este código expira en 15 minutos.</p>
-            <p style="color: #888;">Si no solicitaste este cambio, ignora este mensaje.</p>
+    # Enviar email con Gmail SMTP
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    gmail_user = os.getenv("GMAIL_USER")
+    gmail_password = os.getenv("GMAIL_APP_PASSWORD")
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Código de verificación DORFIN"
+    msg["From"] = f"DORFIN <{gmail_user}>"
+    msg["To"] = user.email
+
+    html = f"""
+    <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 24px;">
+        <h2 style="color: #39FF14;">DORFIN</h2>
+        <p>Tu código para restablecer la contraseña es:</p>
+        <div style="background: #1a1a2e; border: 2px solid #39FF14; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+            <span style="font-size: 48px; font-weight: bold; color: #39FF14; letter-spacing: 8px;">{codigo}</span>
         </div>
-        """
-    })
+        <p style="color: #888;">Este código expira en 15 minutos.</p>
+        <p style="color: #888;">Si no solicitaste este cambio, ignora este mensaje.</p>
+    </div>
+    """
+
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_user, gmail_password)
+            server.sendmail(gmail_user, user.email, msg.as_string())
+    except Exception as e:
+        print(f"Error enviando email: {e}")
+        # No lanzar error — el código ya está guardado en DB
 
     return {"message": "Si el email existe, recibirás un código"}
 

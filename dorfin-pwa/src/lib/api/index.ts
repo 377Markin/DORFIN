@@ -125,6 +125,10 @@ export const routinesApi = {
     const { data } = await apiClient.post<Routine>(`/rutinas/${id}/descanso`)
     return data
   },
+  resetCiclo: async (): Promise<Routine[]> => {
+    const { data } = await apiClient.post<Routine[]>('/rutinas/reset-ciclo')
+    return data
+  },
 }
 
 // ── Mesociclos ────────────────────────────────────────────────

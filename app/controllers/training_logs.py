@@ -198,7 +198,9 @@ def get_stats(
             weeks_ago = (today - week_start).days // 7
             if weeks_ago > 3:
                 continue
-            label = f"S{4 - weeks_ago}"
+            # Semana del mes (1-4) basada en el día del mes
+            semana_del_mes = (log_date.day - 1) // 7 + 1
+            label = f"S{semana_del_mes}"
             if label not in weekly:
                 weekly[label] = 0.0
             peso = _parse_peso(log.anotaciones)
