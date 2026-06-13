@@ -127,3 +127,28 @@ def update_mesociclo(
     db.commit()
     db.refresh(meso)
     return meso.to_dict()
+
+@router.post("/{meso_id}/extender", response_model=MesocicloResponse)
+def extender_mesociclo(
+    meso_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Extiende el mesociclo actual con más semanas y/o cambia el objetivo."""
+    meso = (
+        db.query(Mesociclo)
+        .filter(Mesociclo.id == meso_id, Mesociclo.usuario_id == current_user.id)
+        .first()
+    )
+    if not meso:
+        raise HTTPException(status_code=404, detail="Mesociclo no encontrado")
+    
+    semanas_extra = body.get("semanas_extra", 8)
+    nueva_meta = body.get("meta", meso.meta)
+    
+    meso.duracion_semanas = (meso.duracion_semanas or 12) + semanas_extra
+    meso.meta = nueva_meta
+    db.commit()
+    db.refresh(meso)
+    return meso.to_dict()

@@ -161,6 +161,11 @@ export const mesociclosApi = {
     const { data } = await apiClient.post<Mesociclo>(`/mesociclos/${id}/medidas`, { semana, mes, medidas })
     return data
   },
+
+  extender: async (id: number, semanas_extra: number, meta: string): Promise<Mesociclo> => {
+    const { data } = await apiClient.post<Mesociclo>(`/mesociclos/${id}/extender`, { semanas_extra, meta })
+    return data
+  },
 }
 // ── Rutina Ejercicios ─────────────────────────────────────────
 export interface RutinaEjercicio {
