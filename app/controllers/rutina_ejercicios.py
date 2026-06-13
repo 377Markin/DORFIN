@@ -85,5 +85,14 @@ def delete_ejercicio(
     # Borrar logs asociados a este ejercicio antes de borrarlo
     db.query(TrainingLog).filter(TrainingLog.ejercicio_id == ejercicio_id).delete()
     db.delete(ejercicio)
+
+    # Si no quedan ejercicios, resetear completado_fecha de la rutina
+    restantes = db.query(RutinaEjercicio).filter(
+        RutinaEjercicio.rutina_id == rutina_id,
+        RutinaEjercicio.id != ejercicio_id
+    ).count()
+    if restantes == 0:
+        rutina.completado_fecha = None
+
     db.commit()
 

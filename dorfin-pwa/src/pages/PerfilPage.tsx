@@ -92,8 +92,10 @@ function HistorialEjercicioModal({ pr, onClose }: { pr: PersonalRecord; onClose:
     y: h - (l.peso / maxPeso) * h * 0.85,
   }))
   const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+  // Progreso basado en volumen (peso × reps) no solo kg
+  const volumen = (log: { peso: number; repeticiones: number }) => log.peso * log.repeticiones
   const pct = logs.length >= 2
-    ? Math.round(((logs[logs.length-1].peso - logs[0].peso) / (logs[0].peso || 1)) * 100)
+    ? Math.round(((volumen(logs[logs.length-1]) - volumen(logs[0])) / (volumen(logs[0]) || 1)) * 100)
     : 0
 
   return (
@@ -160,32 +162,79 @@ function HistorialEjercicioModal({ pr, onClose }: { pr: PersonalRecord; onClose:
     const diffPeso = prev ? +(log.peso - prev.peso).toFixed(1) : null
     const diffReps = prev ? log.repeticiones - prev.repeticiones : null
     const diffRir = prev ? +(log.rir - prev.rir).toFixed(1) : null
+
+    // Progreso real: subir reps o bajar RIR con mismo peso también es progreso
+    const hayProgreso = prev && (
+      (diffPeso !== null && diffPeso > 0) ||
+      (diffReps !== null && diffReps > 0) ||
+      (diffRir !== null && diffRir < 0)
+    )
+    const hayRegresion = prev && !hayProgreso && (
+      (diffPeso !== null && diffPeso < 0) ||
+      (diffReps !== null && diffReps < 0) ||
+      (diffRir !== null && diffRir > 0)
+    )
+
     return (
-      <div key={i} className="card p-3 flex items-center justify-between">
-        <div className="flex-1">
-          <p className="text-dorfin-text text-sm font-medium">{log.peso} kg × {log.repeticiones} reps</p>
-          <p className="text-dorfin-faint text-xs">RIR {log.rir} · {log.fecha}</p>
-          {prev && (
-            <div className="flex gap-2 mt-1 flex-wrap">
-              {diffPeso !== null && diffPeso !== 0 && (
-                <span className={`text-[10px] font-medium ${diffPeso > 0 ? 'text-dorfin-green' : 'text-red-400'}`}>
-                  {diffPeso > 0 ? '↑' : '↓'} {Math.abs(diffPeso)} kg
-                </span>
-              )}
-              {diffReps !== null && diffReps !== 0 && (
-                <span className={`text-[10px] font-medium ${diffReps > 0 ? 'text-dorfin-green' : 'text-red-400'}`}>
-                  {diffReps > 0 ? '↑' : '↓'} {Math.abs(diffReps)} reps
-                </span>
-              )}
-              {diffRir !== null && diffRir !== 0 && (
-                <span className={`text-[10px] font-medium ${diffRir < 0 ? 'text-dorfin-green' : 'text-red-400'}`}>
-                  RIR {diffRir > 0 ? '↑' : '↓'} {Math.abs(diffRir)}
-                </span>
-              )}
-            </div>
-          )}
+      <div key={i} className={`card p-3 border transition-all ${
+        hayProgreso ? 'border-dorfin-green/30 bg-dorfin-green/5'
+        : hayRegresion ? 'border-red-400/20'
+        : 'border-dorfin-border'
+      }`}>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <p className="text-dorfin-text text-sm font-medium">
+              {log.peso} kg × {log.repeticiones} reps
+            </p>
+            <p className="text-dorfin-faint text-xs mt-0.5">RIR {log.rir} · {log.fecha}</p>
+            {prev && (
+              <div className="flex gap-2 mt-1.5 flex-wrap">
+                {diffPeso !== null && diffPeso !== 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                    diffPeso > 0
+                      ? 'bg-dorfin-green/10 text-dorfin-green'
+                      : 'bg-red-400/10 text-red-400'
+                  }`}>
+                    {diffPeso > 0 ? '↑' : '↓'} {Math.abs(diffPeso)} kg
+                  </span>
+                )}
+                {diffReps !== null && diffReps !== 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                    diffReps > 0
+                      ? 'bg-dorfin-green/10 text-dorfin-green'
+                      : 'bg-red-400/10 text-red-400'
+                  }`}>
+                    {diffReps > 0 ? '↑' : '↓'} {Math.abs(diffReps)} reps
+                  </span>
+                )}
+                {diffRir !== null && diffRir !== 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                    diffRir < 0
+                      ? 'bg-dorfin-green/10 text-dorfin-green'
+                      : 'bg-red-400/10 text-red-400'
+                  }`}>
+                    RIR {diffRir < 0 ? '↓' : '↑'} {Math.abs(diffRir)}
+                  </span>
+                )}
+                {diffPeso === 0 && diffReps === 0 && diffRir === 0 && (
+                  <span className="text-[10px] text-dorfin-faint">Sin cambios</span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col items-end gap-1 ml-2">
+            {i === 0 && (
+              <span className="text-[10px] bg-dorfin-green/10 text-dorfin-green border border-dorfin-green/20 rounded-full px-2 py-0.5">
+                Último
+              </span>
+            )}
+            {hayProgreso && (
+              <span className="text-[10px] bg-dorfin-green/10 text-dorfin-green rounded-full px-2 py-0.5">
+                💪 Progreso
+              </span>
+            )}
+          </div>
         </div>
-        {i === 0 && <span className="text-[10px] bg-dorfin-green/10 text-dorfin-green border border-dorfin-green/20 rounded-full px-2 py-0.5 ml-2">Último</span>}
       </div>
     )
   })
@@ -314,6 +363,119 @@ function MesocicloStats({ meso }: { meso: any }) {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+function ResetPasswordFlow({ email, onClose }: { email: string; onClose: () => void }) {
+  const [step, setStep] = useState<'idle' | 'codigo' | 'nueva'>('idle')
+  const [codigo, setCodigo] = useState('')
+  const [nueva, setNueva] = useState('')
+  const [confirmar, setConfirmar] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSolicitar = async () => {
+    setLoading(true)
+    try {
+      await authApi.solicitarReset(email)
+      setStep('codigo')
+      toast.success('Código enviado a tu correo')
+    } catch {
+      toast.error('Error al enviar el código')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleConfirmar = async () => {
+    if (nueva !== confirmar) { toast.error('Las contraseñas no coinciden'); return }
+    if (nueva.length < 6) { toast.error('Mínimo 6 caracteres'); return }
+    setLoading(true)
+    try {
+      await authApi.confirmarReset(email, codigo, nueva)
+      toast.success('Contraseña actualizada')
+      setStep('idle')
+      setCodigo('')
+      setNueva('')
+      setConfirmar('')
+      onClose()
+    } catch {
+      toast.error('Código inválido o expirado')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (step === 'idle') {
+    return (
+      <button
+        onClick={handleSolicitar}
+        disabled={loading}
+        className="w-full flex items-center justify-center gap-2 border border-dorfin-border rounded-2xl py-3 text-dorfin-muted text-sm font-medium hover:border-dorfin-purple hover:text-dorfin-text transition-colors"
+      >
+        {loading
+          ? <span className="w-4 h-4 border-2 border-dorfin-muted/40 border-t-dorfin-muted rounded-full animate-spin" />
+          : '🔑 Cambiar contraseña'
+        }
+      </button>
+    )
+  }
+
+  if (step === 'codigo') {
+    return (
+      <div className="space-y-3">
+        <p className="text-dorfin-faint text-xs">Ingresa el código de 6 dígitos enviado a <span className="text-dorfin-text">{email}</span></p>
+        <input
+          placeholder="000000"
+          value={codigo}
+          onChange={e => setCodigo(e.target.value)}
+          maxLength={6}
+          className="input-field text-center text-2xl tracking-widest font-display"
+        />
+        <button
+          onClick={() => setStep('nueva')}
+          disabled={codigo.length !== 6}
+          className="btn-primary w-full"
+        >
+          Verificar código
+        </button>
+        <button onClick={() => setStep('idle')} className="w-full text-dorfin-faint text-xs text-center py-1">
+          Cancelar
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-dorfin-faint text-xs">Ingresa tu nueva contraseña</p>
+      <input
+        type="password"
+        placeholder="Nueva contraseña"
+        value={nueva}
+        onChange={e => setNueva(e.target.value)}
+        className="input-field"
+      />
+      <input
+        type="password"
+        placeholder="Confirmar contraseña"
+        value={confirmar}
+        onChange={e => setConfirmar(e.target.value)}
+        className="input-field"
+      />
+      <button
+        onClick={handleConfirmar}
+        disabled={loading || !nueva || !confirmar}
+        className="btn-primary w-full flex items-center justify-center"
+      >
+        {loading
+          ? <span className="w-4 h-4 border-2 border-dorfin-bg/40 border-t-dorfin-bg rounded-full animate-spin" />
+          : 'Guardar contraseña'
+        }
+      </button>
+      <button onClick={() => setStep('idle')} className="w-full text-dorfin-faint text-xs text-center py-1">
+        Cancelar
+      </button>
     </div>
   )
 }
@@ -541,6 +703,10 @@ export default function PerfilPage() {
                   className="btn-primary w-full mt-4 flex items-center justify-center gap-2">
                   <Check size={16} /> Guardar meta
                 </button>
+              </div>
+              <div className="border-t border-dorfin-border pt-5 mb-5">
+                <p className="text-dorfin-muted text-xs uppercase tracking-widest mb-3">Contraseña</p>
+                <ResetPasswordFlow email={user?.email ?? ''} onClose={() => setShowSettings(false)} />
               </div>
               <div className="border-t border-dorfin-border pt-5">
                 <p className="text-dorfin-muted text-xs uppercase tracking-widest mb-3">Zona de peligro</p>

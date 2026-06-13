@@ -75,13 +75,19 @@ export default function RutinaDetailPage() {
   })
 
   useEffect(() => {
-    if (ejercicios && ejercicios.length > 0) {
-      const validIds = ejercicios.map(e => e.id)
-      setCompletados(prev => {
-        const clean = prev.filter(i => validIds.includes(i))
-        localStorage.setItem(storageKey, JSON.stringify(clean))
-        return clean
-      })
+    if (ejercicios !== undefined) {
+      if (ejercicios.length === 0) {
+        // Sin ejercicios — limpiar todo
+        localStorage.removeItem(storageKey)
+        setCompletados([])
+      } else {
+        const validIds = ejercicios.map(e => e.id)
+        setCompletados(prev => {
+          const clean = prev.filter(i => validIds.includes(i))
+          localStorage.setItem(storageKey, JSON.stringify(clean))
+          return clean
+        })
+      }
     }
   }, [ejercicios])
 
@@ -103,10 +109,17 @@ export default function RutinaDetailPage() {
   const deleteMutation = useMutation({
     mutationFn: (ejercicioId: number) =>
       rutinaEjerciciosApi.delete(Number(id), ejercicioId),
-    onSuccess: () => {
+    onSuccess: (_, ejercicioId) => {
       qc.invalidateQueries({ queryKey: ['rutina-ejercicios', id] })
       qc.invalidateQueries({ queryKey: ['stats'] })
       qc.invalidateQueries({ queryKey: ['streak'] })
+      qc.invalidateQueries({ queryKey: ['routines'] })
+      // Limpiar completado del ejercicio borrado del localStorage
+      setCompletados(prev => {
+        const next = prev.filter(i => i !== ejercicioId)
+        localStorage.setItem(storageKey, JSON.stringify(next))
+        return next
+      })
     },
   })
 

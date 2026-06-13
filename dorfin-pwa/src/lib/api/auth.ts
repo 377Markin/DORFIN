@@ -38,6 +38,14 @@ export const authApi = {
     return data
   },
 
+  solicitarReset: async (email: string): Promise<void> => {
+    await apiClient.post('/auth/solicitar-reset', { email })
+  },
+
+  confirmarReset: async (email: string, codigo: string, nueva_contrasena: string): Promise<void> => {
+    await apiClient.post('/auth/confirmar-reset', { email, codigo, nueva_contrasena })
+  },
+
 checkEmail: async (email: string): Promise<{ exists: boolean }> => {
   const { data } = await apiClient.post('/auth/check-email', { email })
   return data

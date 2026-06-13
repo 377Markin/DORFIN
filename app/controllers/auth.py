@@ -1,3 +1,9 @@
+import resend
+import os
+import random
+import string
+from datetime import datetime, timedelta
+from app.models.password_reset import PasswordResetCode
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -177,3 +183,81 @@ async def upload_foto(
     db.commit()
     db.refresh(current_user)
     return current_user.to_dict()
+
+class SolicitarResetRequest(PydanticBase):
+    email: str
+
+class ConfirmarResetRequest(PydanticBase):
+    email: str
+    codigo: str
+    nueva_contrasena: str
+
+@router.post("/solicitar-reset")
+def solicitar_reset(body: SolicitarResetRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user:
+        # No revelar si el email existe o no por seguridad
+        return {"message": "Si el email existe, recibirás un código"}
+
+    # Generar código de 6 dígitos
+    codigo = ''.join(random.choices(string.digits, k=6))
+    expira = datetime.utcnow() + timedelta(minutes=15)
+
+    # Invalidar códigos anteriores
+    db.query(PasswordResetCode).filter(
+        PasswordResetCode.usuario_id == user.id,
+        PasswordResetCode.usado == False
+    ).update({"usado": True})
+
+    reset = PasswordResetCode(
+        usuario_id=user.id,
+        codigo=codigo,
+        expira_en=expira,
+    )
+    db.add(reset)
+    db.commit()
+
+    # Enviar email con Resend
+    resend.api_key = os.getenv("RESEND_API_KEY")
+    resend.Emails.send({
+        "from": "DORFIN <onboarding@resend.dev>",
+        "to": user.email,
+        "subject": "Código de verificación DORFIN",
+        "html": f"""
+        <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 24px;">
+            <h2 style="color: #39FF14;">DORFIN</h2>
+            <p>Tu código para restablecer la contraseña es:</p>
+            <div style="background: #1a1a2e; border: 2px solid #39FF14; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+                <span style="font-size: 48px; font-weight: bold; color: #39FF14; letter-spacing: 8px;">{codigo}</span>
+            </div>
+            <p style="color: #888;">Este código expira en 15 minutos.</p>
+            <p style="color: #888;">Si no solicitaste este cambio, ignora este mensaje.</p>
+        </div>
+        """
+    })
+
+    return {"message": "Si el email existe, recibirás un código"}
+
+
+@router.post("/confirmar-reset")
+def confirmar_reset(body: ConfirmarResetRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Datos inválidos")
+
+    reset = db.query(PasswordResetCode).filter(
+        PasswordResetCode.usuario_id == user.id,
+        PasswordResetCode.codigo == body.codigo,
+        PasswordResetCode.usado == False,
+        PasswordResetCode.expira_en > datetime.utcnow()
+    ).first()
+
+    if not reset:
+        raise HTTPException(status_code=400, detail="Código inválido o expirado")
+
+    # Actualizar contraseña
+    user.contrasena = hash_password(body.nueva_contrasena)
+    reset.usado = True
+    db.commit()
+
+    return {"message": "Contraseña actualizada correctamente"}

@@ -45,11 +45,13 @@ export function useRegister() {
 export function useLogout() {
   const { clearAuth } = useAuthStore()
   const navigate = useNavigate()
+  const qc = useQueryClient()
 
   return useMutation({
     mutationFn: () => authApi.logout(),
     onSettled: () => {
       clearAuth()
+      qc.clear()
       navigate('/auth')
     },
   })
@@ -79,7 +81,7 @@ export function useUltimoLog(ejercicioId: number | null) {
     queryKey: ['ultimo-log', ejercicioId],
     queryFn: () => trainingLogsApi.getUltimo(ejercicioId!),
     enabled: ejercicioId !== null,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 0,
   })
 }
 
@@ -90,6 +92,8 @@ export function useCreateLog() {
     mutationFn: (body: TrainingLogCreate) => trainingLogsApi.create(body),
     onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: ['ultimo-log', variables.ejercicio_id] })
+      qc.invalidateQueries({ queryKey: ['ultimo-log-nombre'] })
+      qc.invalidateQueries({ queryKey: ['historial-ejercicio-nombre'] })
       qc.invalidateQueries({ queryKey: ['streak'] })
       qc.invalidateQueries({ queryKey: ['stats'] })
       toast.success('¡Serie registrada! 💪')
