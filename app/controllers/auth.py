@@ -45,6 +45,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         altura=body.altura,
         peso=body.peso,
         meta=body.meta,
+        sexo=body.sexo,
     )
     db.add(user)
     db.commit()
@@ -149,7 +150,7 @@ def update_me(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    allowed = {"nombre", "edad", "altura", "peso", "meta", "foto_url"}
+    allowed = {"nombre", "edad", "altura", "peso", "meta", "foto_url", "sexo"}
     for key, value in updates.items():
         if key in allowed:
             setattr(current_user, key, value)

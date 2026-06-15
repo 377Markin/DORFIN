@@ -14,6 +14,7 @@ export const registerSchema = z.object({
   altura: z.number({ coerce: true }).min(100).max(250),
   peso: z.number({ coerce: true }).min(30).max(300),
   meta: z.string().min(1, 'Selecciona una meta'),
+  sexo: z.string().min(1, 'Selecciona tu sexo'),
 }).refine((d) => d.contrasena === d.confirmar, {
   message: 'Las contraseñas no coinciden',
   path: ['confirmar'],

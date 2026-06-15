@@ -264,6 +264,21 @@ export default function AuthPage() {
               <p className="text-dorfin-muted text-sm mb-5">Cuéntanos sobre ti</p>
               <form onSubmit={registerForm.handleSubmit(onRegister)} className="space-y-3">
                 <input type="hidden" {...registerForm.register('email')} />
+                <div>
+                  <p className="text-dorfin-muted text-xs mb-2">Sexo biológico</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[{ val: 'hombre', label: '♂ Hombre' }, { val: 'mujer', label: '♀ Mujer' }].map(op => (
+                      <label key={op.val} className="cursor-pointer">
+                        <input type="radio" value={op.val} className="sr-only" {...registerForm.register('sexo')} />
+                        <div className={`card p-3 text-sm text-center transition-all border-2 ${
+                          registerForm.watch('sexo') === op.val
+                            ? 'border-dorfin-green text-dorfin-green bg-dorfin-green/10'
+                            : 'border-dorfin-border text-dorfin-muted'
+                        }`}>{op.label}</div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 <input placeholder="Nombre" className="input-field" {...registerForm.register('nombre')} />
                 {registerForm.formState.errors.nombre && (
                   <p className="text-red-400 text-xs -mt-1">{registerForm.formState.errors.nombre.message}</p>

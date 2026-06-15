@@ -8,6 +8,7 @@ export interface User {
   peso?: number
   meta?: string
   foto_url?: string
+  sexo?: string
   fecha_creacion?: string
 }
 
@@ -46,10 +47,21 @@ export interface RegisterRequest {
   meta: string
 }
 
+export interface RegisterRequest {
+  nombre: string
+  email: string
+  contrasena: string
+  fecha_nacimiento: string
+  altura: number
+  peso: number
+  meta: string
+  sexo: string
+}
+
 // ── Exercise ──────────────────────────────────────────────────
 export interface Exercise {
   id: number
-  nombre: string
+  nombre: string  
   musculo: string
   descripcion: string
   imagen_url?: string | null

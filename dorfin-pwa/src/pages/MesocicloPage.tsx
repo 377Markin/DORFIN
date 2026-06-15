@@ -1,17 +1,21 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, Plus, TrendingUp, X, ChevronDown, ChevronUp, Lock, Trophy } from 'lucide-react'
+import { Check, Plus, TrendingUp, X, ChevronDown, ChevronUp, Lock, Trophy, ChevronRight, Info, Shield, Calendar, Dumbbell } from 'lucide-react'
+import CuerpoDorfinPage from '@/pages/CuerpoDorfinPage'
 import { useMesocicloActivo, useCreateMesociclo, useAgregarMedidas } from '@/lib/hooks'
-import { Skeleton, EmptyState, PageHeader } from '@/components/shared'
+import { Skeleton, PageHeader } from '@/components/shared'
 import { differenceInDays, differenceInWeeks, parseISO, format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { mesociclosApi } from '@/lib/api'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { calcularGrasaCorporal, type MedidasCorporales } from '@/lib/bodyfat'
+import { useGrasaCorporal } from '@/lib/hooks'
 import type { MedidaSnapshot } from '@/types'
 
 const METAS = ['Hipertrofia', 'Definición', 'Fuerza', 'Powerlifting', 'Resistencia', 'Pérdida de peso', 'Mantenimiento']
 
-const MEDIDAS_CORPORALES = [
+const MEDIDAS_CORPORALES_LIST = [
   { key: 'cuello',          label: 'Cuello' },
   { key: 'hombros',         label: 'Hombros' },
   { key: 'pecho',           label: 'Pecho' },
@@ -26,8 +30,22 @@ const MEDIDAS_CORPORALES = [
   { key: 'pantorrilla_izq', label: 'Pantorrilla izquierda' },
 ]
 
+const ANOTACIONES = [
+  { key: 'cuello',          label: 'Cuello',       x: 50,  y: 8,   color: '#39FF14', side: 'center' },
+  { key: 'hombros',         label: 'Hombros',      x: 88,  y: 20,  color: '#a78bfa', side: 'right'  },
+  { key: 'pecho',           label: 'Pecho',        x: 88,  y: 30,  color: '#a78bfa', side: 'right'  },
+  { key: 'bicep_der',       label: 'Bíceps D',     x: 12,  y: 35,  color: '#fb923c', side: 'left'   },
+  { key: 'bicep_izq',       label: 'Bíceps I',     x: 88,  y: 38,  color: '#fb923c', side: 'right'  },
+  { key: 'cintura',         label: 'Cintura',      x: 88,  y: 48,  color: '#39FF14', side: 'right'  },
+  { key: 'abdomen',         label: 'Abdomen',      x: 12,  y: 52,  color: '#39FF14', side: 'left'   },
+  { key: 'cadera',          label: 'Cadera',       x: 88,  y: 58,  color: '#a78bfa', side: 'right'  },
+  { key: 'muslo_der',       label: 'Muslo D',      x: 12,  y: 68,  color: '#60a5fa', side: 'left'   },
+  { key: 'muslo_izq',       label: 'Muslo I',      x: 88,  y: 68,  color: '#60a5fa', side: 'right'  },
+  { key: 'pantorrilla_der', label: 'Pant. D',      x: 12,  y: 82,  color: '#34d399', side: 'left'   },
+  { key: 'pantorrilla_izq', label: 'Pant. I',      x: 88,  y: 82,  color: '#34d399', side: 'right'  },
+]
+
 const SEMANAS_POR_MES = 4
-const MEDIDAS_INVERSAS = ['cintura', 'abdomen', 'cadera']
 
 function snakePath(total: number): string {
   const pts: string[] = []
@@ -47,64 +65,57 @@ function snakePath(total: number): string {
   return pts.join(' ')
 }
 
-// Componente de línea de tiempo por medida
-function MedidaTimeline({ historial, medidaKey, label }: {
-  historial: MedidaSnapshot[]
-  medidaKey: string
-  label: string
-}) {
-  const datos = historial
-    .filter(h => h.medidas[medidaKey] != null)
-    .sort((a, b) => a.semana - b.semana)
+function getColorCategoria(cat: string) {
+  if (cat.includes('élite') || cat.includes('Atlét')) return '#39FF14'
+  if (cat.includes('forma')) return '#86efac'
+  if (cat.includes('Promedio')) return '#fbbf24'
+  if (cat.includes('Sobrepeso')) return '#fb923c'
+  return '#f87171'
+}
 
-  if (datos.length < 2) return null
-
-  const valores = datos.map(d => d.medidas[medidaKey])
+function SparklineGrasa({ historial }: { historial: { fecha: string; porcentaje: number }[] }) {
+  if (historial.length < 2) return null
+  const valores = historial.map(h => h.porcentaje)
   const min = Math.min(...valores)
   const max = Math.max(...valores)
   const rango = max - min || 1
-  const w = 260, h = 60
-
-  const pts = datos.map((d, i) => ({
-    x: (i / (datos.length - 1)) * w,
-    y: h - ((d.medidas[medidaKey] - min) / rango) * h * 0.8 - h * 0.1,
+  const w = 280, h = 60
+  const pts = historial.map((entry, i) => ({
+    x: (i / (historial.length - 1)) * w,
+    y: h - ((entry.porcentaje - min) / rango) * h * 0.8 - h * 0.1,
   }))
-
   const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-  const primero = valores[0]
-  const ultimo = valores[valores.length - 1]
-  const diff = +(ultimo - primero).toFixed(1)
-  const esInversa = MEDIDAS_INVERSAS.includes(medidaKey)
-  const esBueno = esInversa ? diff < 0 : diff > 0
+  const diff = +(historial[historial.length-1].porcentaje - historial[0].porcentaje).toFixed(1)
 
   return (
-    <div className="card p-4 mb-3">
+    <div className="card p-4">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-dorfin-text text-sm font-semibold">{label}</p>
         <div className="flex items-center gap-2">
-          <span className="text-dorfin-faint text-xs">{primero} → {ultimo} cm</span>
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${
-            diff === 0 ? 'text-dorfin-faint bg-dorfin-surface'
-            : esBueno ? 'text-dorfin-green bg-dorfin-green/10'
-            : 'text-red-400 bg-red-400/10'
-          }`}>
-            {diff > 0 ? '+' : ''}{diff} cm
-          </span>
+          <TrendingUp size={14} className="text-dorfin-green" />
+          <p className="text-dorfin-text text-sm font-semibold">Evolución de grasa corporal</p>
+        </div>
+        <div className="text-right">
+          <p className={`text-lg font-bold ${diff < 0 ? 'text-dorfin-green' : diff > 0 ? 'text-red-400' : 'text-dorfin-faint'}`}>
+            {diff > 0 ? '+' : ''}{diff}% {diff < 0 ? '↓' : diff > 0 ? '↑' : ''}
+          </p>
+          <p className="text-dorfin-faint text-[10px]">Desde el inicio</p>
         </div>
       </div>
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: 60 }}>
         <defs>
-          <linearGradient id={`grad-${medidaKey}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={esBueno ? '#39FF14' : '#f87171'} stopOpacity="0.3" />
-            <stop offset="100%" stopColor={esBueno ? '#39FF14' : '#f87171'} stopOpacity="0" />
+          <linearGradient id="grasa-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#39FF14" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#39FF14" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path d={`${path} L ${pts[pts.length-1].x} ${h} L 0 ${h} Z`} fill={`url(#grad-${medidaKey})`} />
-        <path d={path} fill="none" stroke={esBueno ? '#39FF14' : '#f87171'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={`${path} L ${pts[pts.length-1].x} ${h} L 0 ${h} Z`} fill="url(#grasa-grad)" />
+        <path d={path} fill="none" stroke="#39FF14" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         {pts.map((p, i) => (
           <g key={i}>
-            <circle cx={p.x} cy={p.y} r="3" fill={esBueno ? '#39FF14' : '#f87171'} />
-            <text x={p.x} y={h - 2} fontSize="8" fill="#4A4468" textAnchor="middle">S{datos[i].semana}</text>
+            <circle cx={p.x} cy={p.y} r="3" fill="#39FF14" />
+            <text x={p.x} y={h} fontSize="8" fill="#4A4468" textAnchor="middle">
+              {historial[i].fecha.slice(5)}
+            </text>
           </g>
         ))}
       </svg>
@@ -117,34 +128,47 @@ export default function MesocicloPage() {
   const createMeso = useCreateMesociclo()
   const agregarMedidas = useAgregarMedidas()
   const qc = useQueryClient()
+  const user = useAuthStore((s) => s.user)
+  const { getHistorial, saveHistorial } = useGrasaCorporal()
 
-  const [showCreate, setShowCreate]         = useState(false)
-  const [showMedidas, setShowMedidas]       = useState(false)
-  const [showHistorial, setShowHistorial]   = useState<MedidaSnapshot | null>(null)
-  const [showEstadisticas, setShowEstadisticas] = useState(false)
-  const [showFinCiclo, setShowFinCiclo]     = useState(false)
+  // Mesociclo states
+  const [showCreate, setShowCreate]             = useState(false)
+  const [showMedidas, setShowMedidas]           = useState(false)
+  const [showHistorialMeso, setShowHistorialMeso] = useState<MedidaSnapshot | null>(null)
   const [semanaSeleccionada, setSemanaSeleccionada] = useState(1)
-  const [mesSeleccionado, setMesSeleccionado]       = useState(1)
-  const [medidasForm, setMedidasForm]       = useState<Record<string, string>>({})
+  const [mesSeleccionado, setMesSeleccionado]   = useState(1)
+  const [medidasForm, setMedidasForm]           = useState<Record<string, string>>({})
   const [historialAbierto, setHistorialAbierto] = useState(false)
-  const [mesHistorial, setMesHistorial]     = useState<number | null>(null)
-  const [nuevaMeta, setNuevaMeta]           = useState('')
-  const [semanasExtra, setSemanasExtra]     = useState('8')
+  const [mesHistorial, setMesHistorial]         = useState<number | null>(null)
+  const [showFinCiclo, setShowFinCiclo]         = useState(false)
+  const [nuevaMeta, setNuevaMeta]               = useState('')
+  const [semanasExtra, setSemanasExtra]         = useState('8')
+  const [showInfo, setShowInfo]                 = useState(false)
+
+  // Cuerpo de DORFIN states
+  const [showCuerpoSection, setShowCuerpoSection] = useState(true)
+  const [showCuerpoPage, setShowCuerpoPage]       = useState(false)
+  const [cuerpoTab, setCuerpoTab]               = useState<'resultado' | 'medidas' | 'historial'>('resultado')
+  const [cuerpoForm, setCuerpoForm]             = useState<Record<string, string>>(() => {
+    const ultimo = meso?.historial_medidas?.[meso.historial_medidas.length - 1]
+    const base: Record<string, string> = {}
+    if (ultimo?.medidas) {
+      Object.entries(ultimo.medidas).forEach(([k, v]) => { base[k] = String(v) })
+    }
+    return base
+  })
+
+  const grasaHistorial = getHistorial()
 
   const extenderMutation = useMutation({
     mutationFn: ({ semanas_extra, meta }: { semanas_extra: number; meta: string }) =>
       mesociclosApi.extender(meso!.id, semanas_extra, meta),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['mesociclo-activo'] })
-      setShowFinCiclo(false)
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['mesociclo-activo'] }); setShowFinCiclo(false) },
   })
 
   const [form, setForm] = useState({
-    meta: 'Hipertrofia',
-    duracion_semanas: '12',
-    frecuencia_medidas: 'semanal',
-    peso_inicial: '',
+    meta: 'Hipertrofia', duracion_semanas: '12',
+    frecuencia_medidas: 'semanal', peso_inicial: '',
   })
 
   const duracionSemanas = meso?.duracion_semanas ?? 12
@@ -154,7 +178,7 @@ export default function MesocicloPage() {
   const totalMeses      = Math.ceil(duracionSemanas / SEMANAS_POR_MES)
   const currentMes      = Math.ceil(currentWeek / SEMANAS_POR_MES)
   const semanasRegistradas = meso?.historial_medidas?.length ?? 0
-  const progress = Math.round((semanasRegistradas / duracionSemanas) * 100)
+  const progress        = Math.round((semanasRegistradas / duracionSemanas) * 100)
   const cicloTerminado  = progress >= 100
 
   const semanasDelMes = useMemo(() => {
@@ -170,6 +194,61 @@ export default function MesocicloPage() {
     return Array.from({ length: fin - inicio + 1 }, (_, i) => inicio + i)
   }, [mesHistorial, duracionSemanas])
 
+  // Calcular edad
+  const edad = useMemo(() => {
+    if (!user?.fecha_nacimiento) return 25
+    const hoy = new Date()
+    const nac = new Date(user.fecha_nacimiento + 'T00:00:00')
+    let e = hoy.getFullYear() - nac.getFullYear()
+    if (hoy.getMonth() < nac.getMonth() || (hoy.getMonth() === nac.getMonth() && hoy.getDate() < nac.getDate())) e--
+    return e
+  }, [user])
+
+  // Calcular grasa con medidas del cuerpoForm
+  const medidasCuerpo: MedidasCorporales | null = useMemo(() => {
+    if (!user?.sexo || !user?.altura || !user?.peso) return null
+    if (!cuerpoForm.cuello || !cuerpoForm.cintura || !cuerpoForm.abdomen || !cuerpoForm.cadera) return null
+    const n = (k: string) => cuerpoForm[k] ? Number(cuerpoForm[k]) : undefined
+    return {
+      sexo: user.sexo as 'hombre' | 'mujer',
+      edad, altura: user.altura, peso: user.peso,
+      cuello:           Number(cuerpoForm.cuello),
+      cintura:          Number(cuerpoForm.cintura),
+      abdomen:          Number(cuerpoForm.abdomen),
+      cadera:           Number(cuerpoForm.cadera),
+      hombros:          n('hombros'),
+      pecho:            n('pecho'),
+      bicep_der:        n('bicep_der'),
+      bicep_izq:        n('bicep_izq'),
+      muslo_der:        n('muslo_der'),
+      muslo_izq:        n('muslo_izq'),
+      pantorrilla_der:  n('pantorrilla_der'),
+      pantorrilla_izq:  n('pantorrilla_izq'),
+      antebrazo_der:    n('antebrazo_der'),
+      antebrazo_izq:    n('antebrazo_izq'),
+      muneca:           n('muneca'),
+      tobillo:          n('tobillo'),
+      anchura_hombros:  n('anchura_hombros'),
+      anchura_cadera:   n('anchura_cadera'),
+      altura_sentado:   n('altura_sentado'),
+    }
+  }, [cuerpoForm, user, edad])
+
+  const resultadoGrasa = useMemo(() => {
+    if (!medidasCuerpo) return null
+    return calcularGrasaCorporal(medidasCuerpo)
+  }, [medidasCuerpo])
+
+  // Sincronizar cuerpoForm cuando llegan medidas del mesociclo
+  useMemo(() => {
+    const ultimo = meso?.historial_medidas?.[meso.historial_medidas.length - 1]
+    if (ultimo?.medidas && Object.keys(cuerpoForm).length === 0) {
+      const base: Record<string, string> = {}
+      Object.entries(ultimo.medidas).forEach(([k, v]) => { base[k] = String(v) })
+      setCuerpoForm(base)
+    }
+  }, [meso])
+
   function puedeRegistrarSemana(semana: number): boolean {
     return diasDesdeInicio >= (semana - 1) * 5
   }
@@ -180,7 +259,7 @@ export default function MesocicloPage() {
 
   function abrirSemana(semana: number) {
     const snap = meso?.historial_medidas?.find(h => h.semana === semana)
-    if (snap) { setShowHistorial(snap); return }
+    if (snap) { setShowHistorialMeso(snap); return }
     if (!puedeRegistrarSemana(semana)) return
     setSemanaSeleccionada(semana)
     setMesSeleccionado(Math.ceil(semana / SEMANAS_POR_MES))
@@ -194,74 +273,88 @@ export default function MesocicloPage() {
     Object.entries(medidasForm).forEach(([k, v]) => { if (v) medidas[k] = Number(v) })
     agregarMedidas.mutate(
       { id: meso.id, semana: semanaSeleccionada, mes: mesSeleccionado, medidas },
-      { onSuccess: () => { setShowMedidas(false); setMedidasForm({}) } }
+      { onSuccess: () => {
+        // Sincronizar con cuerpoForm
+        const newForm: Record<string, string> = {}
+        Object.entries(medidas).forEach(([k, v]) => { newForm[k] = String(v) })
+        setCuerpoForm(prev => ({ ...prev, ...newForm }))
+        setShowMedidas(false)
+        setMedidasForm({})
+      }}
     )
+  }
+
+  function handleGuardarGrasa() {
+    if (!resultadoGrasa) return
+    saveHistorial(resultadoGrasa, { ...cuerpoForm, peso: user?.peso, altura: user?.altura })
+    setCuerpoTab('resultado')
   }
 
   function handleCreate() {
     createMeso.mutate({
       fecha_inicio: new Date().toISOString().split('T')[0],
       peso_inicial: Number(form.peso_inicial) || 0,
-      medidas: {},
-      meta: form.meta,
+      medidas: {}, meta: form.meta,
       duracion_semanas: form.frecuencia_medidas === 'mensual'
-        ? Number(form.duracion_semanas) * 4
-        : Number(form.duracion_semanas),
+        ? Number(form.duracion_semanas) * 4 : Number(form.duracion_semanas),
       frecuencia_medidas: form.frecuencia_medidas,
     }, { onSuccess: () => setShowCreate(false) })
   }
 
   function renderSemanas(semanas: number[], bloqueadas = false) {
-    const total = semanas.length
-    const svgH  = total * 100 + 20
     return (
       <div className="relative">
-        <svg className="absolute inset-0 w-full pointer-events-none" style={{ height: svgH }}
-          viewBox={`0 0 280 ${svgH}`} preserveAspectRatio="none">
-          <path d={snakePath(total)} fill="none" stroke="#39FF14" strokeWidth="3"
-            strokeDasharray="8 4" opacity="0.25" />
-        </svg>
-        <div style={{ paddingBottom: 8 }}>
+        {/* Línea conectora horizontal detrás de los círculos */}
+        <div className="absolute top-[52px] left-[56px] right-[56px] h-0 pointer-events-none"
+          style={{ borderTop: '2px dashed rgba(57,255,20,0.25)' }} />
+
+        <div className="flex items-start justify-between px-0">
           {semanas.map((semana, i) => {
-            const isLeft     = i % 2 === 0
             const snap       = meso?.historial_medidas?.find(h => h.semana === semana)
             const tieneSnap  = !!snap
             const esCurrent  = semana === currentWeek
-            const esAnterior = semana < currentWeek
             const puede      = !bloqueadas && puedeRegistrarSemana(semana)
             const diasFaltan = !bloqueadas && !tieneSnap && !puede ? diasParaDesbloquear(semana) : 0
-
             return (
-              <motion.div key={semana} initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }} transition={{ delay: i * 0.05 }}
-                className={`flex ${isLeft ? 'justify-start' : 'justify-end'}`}
-                style={{ marginBottom: i < total - 1 ? 16 : 0 }}>
-                <button onClick={() => !bloqueadas && abrirSemana(semana)}
+              <div key={semana} className="flex flex-col items-center flex-1">
+                <motion.button
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: esCurrent && puede ? 1.12 : 1, opacity: 1 }}
+                  transition={{ delay: i * 0.06 }}
+                  onClick={() => !bloqueadas && abrirSemana(semana)}
                   disabled={bloqueadas || (!tieneSnap && !puede && semana !== 1)}
-                  className={`relative flex flex-col items-center justify-center w-28 h-28 rounded-full border-4 transition-all active:scale-95 ${
-                    tieneSnap ? 'border-dorfin-green bg-dorfin-green/15'
-                    : esCurrent && puede ? 'border-dorfin-green bg-dorfin-green shadow-glow scale-110'
-                    : esAnterior && !tieneSnap ? 'border-dorfin-purple/60 bg-dorfin-surface/60'
-                    : puede ? 'border-dorfin-border bg-dorfin-surface'
-                    : 'border-dorfin-border/30 bg-dorfin-surface/30 opacity-50'
-                  }`}>
+                  className={`relative flex flex-col items-center justify-center rounded-full border-[3px] transition-all active:scale-95
+                    ${esCurrent && puede
+                      ? 'w-[72px] h-[72px] border-dorfin-green bg-dorfin-green shadow-glow'
+                      : tieneSnap
+                      ? 'w-[60px] h-[60px] border-dorfin-green bg-dorfin-green/15'
+                      : puede
+                      ? 'w-[60px] h-[60px] border-dorfin-border bg-dorfin-surface'
+                      : 'w-[60px] h-[60px] border-dorfin-border/30 bg-dorfin-surface/30 opacity-50'
+                    }`}
+                >
                   {tieneSnap && (
-                    <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-dorfin-green flex items-center justify-center shadow-glow">
-                      <Check size={12} className="text-dorfin-bg" />
+                    <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-dorfin-green flex items-center justify-center shadow-glow">
+                      <Check size={10} className="text-dorfin-bg" />
                     </div>
                   )}
                   {!tieneSnap && !puede && semana > 1 && !bloqueadas && (
-                    <Lock size={14} className="text-dorfin-faint mb-1" />
+                    <Lock size={12} className="text-dorfin-faint mb-0.5" />
                   )}
-                  <span className={`text-[10px] font-medium tracking-widest uppercase ${
-                    tieneSnap ? 'text-dorfin-green' : esCurrent && puede ? 'text-dorfin-bg' : 'text-dorfin-muted'
-                  }`}>Semana</span>
-                  <span className={`font-display text-4xl ${
-                    tieneSnap ? 'text-dorfin-green' : esCurrent && puede ? 'text-dorfin-bg' : 'text-dorfin-faint'
-                  }`}>{semana}</span>
-                  {diasFaltan > 0 && <span className="text-[9px] text-dorfin-faint mt-0.5">En {diasFaltan}d</span>}
-                </button>
-              </motion.div>
+                  <span className={`text-[8px] font-semibold tracking-widest uppercase leading-none
+                    ${esCurrent && puede ? 'text-dorfin-bg' : tieneSnap ? 'text-dorfin-green' : 'text-dorfin-muted'}`}>
+                    SEMANA
+                  </span>
+                  <span className={`font-display leading-none
+                    ${esCurrent && puede ? 'text-[32px] text-dorfin-bg' : 'text-[28px]'}
+                    ${tieneSnap ? 'text-dorfin-green' : esCurrent && puede ? 'text-dorfin-bg' : 'text-dorfin-faint'}`}>
+                    {semana}
+                  </span>
+                  {diasFaltan > 0 && (
+                    <span className="text-[8px] text-dorfin-faint leading-none mt-0.5">En {diasFaltan}d</span>
+                  )}
+                </motion.button>
+              </div>
             )
           })}
         </div>
@@ -269,10 +362,19 @@ export default function MesocicloPage() {
     )
   }
 
+  const colorCat = resultadoGrasa ? getColorCategoria(resultadoGrasa.categoria) : '#39FF14'
+
   return (
     <div className="min-h-dvh bg-dorfin-bg pb-24">
-      <div className="px-5 pt-14">
+      {/* Header */}
+      <div className="px-5 pt-14 flex items-start justify-between">
         <PageHeader title="MESOCICLO" subtitle="Tu ciclo de entrenamiento" />
+        <button onClick={() => setShowCuerpoPage(true)}
+          className="mt-1 flex items-center gap-2 bg-dorfin-surface border border-dorfin-purple/40 rounded-xl px-3 py-2 hover:border-dorfin-purple transition-colors active:scale-95">
+          <Shield size={14} className="text-dorfin-green" />
+          <span className="text-dorfin-text text-xs font-medium">Cuerpo de DORFIN</span>
+          <ChevronRight size={12} className="text-dorfin-faint" />
+        </button>
       </div>
 
       <div className="px-5 space-y-5">
@@ -297,66 +399,162 @@ export default function MesocicloPage() {
                 className="card p-5 border-dorfin-green/50 bg-dorfin-green/5 text-center">
                 <Trophy size={32} className="text-dorfin-green mx-auto mb-2" />
                 <p className="font-display text-2xl text-dorfin-green">¡CICLO COMPLETADO!</p>
-                <p className="text-dorfin-muted text-sm mt-1 mb-4">
-                  Terminaste {duracionSemanas} semanas de {meso.meta}
-                </p>
-                <button onClick={() => { setNuevaMeta(meso.meta ?? ''); setShowFinCiclo(true) }}
-                  className="btn-primary w-full">
+                <p className="text-dorfin-muted text-sm mt-1 mb-4">Terminaste {duracionSemanas} semanas de {meso.meta}</p>
+                <button onClick={() => { setNuevaMeta(meso.meta ?? ''); setShowFinCiclo(true) }} className="btn-primary w-full">
                   ¿Qué sigue?
                 </button>
               </motion.div>
             )}
 
-            {/* Header */}
+            {/* Header mesociclo */}
             <div className="card p-5 border-dorfin-purple/50">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="text-dorfin-muted text-xs tracking-widest uppercase">Mesociclo Activo</p>
-                  <h2 className="font-display text-3xl text-dorfin-text mt-0.5">{meso.meta?.toUpperCase()}</h2>
-                  <p className="text-dorfin-faint text-xs mt-1">
-                    {meso.frecuencia_medidas === 'semanal' ? 'Medidas semanales' : 'Medidas mensuales'} · {duracionSemanas} semanas
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <div className="flex items-center gap-1.5 bg-dorfin-green/10 border border-dorfin-green/20 rounded-lg px-3 py-1.5">
-                    <TrendingUp size={12} className="text-dorfin-green" />
-                    <span className="text-dorfin-green text-xs font-medium">Sem {currentWeek} · Mes {currentMes}</span>
+                  <p className="text-dorfin-muted text-[10px] tracking-widest uppercase font-medium">Mesociclo Activo</p>
+                  <h2 className="font-display text-4xl text-dorfin-text mt-0.5 leading-none">{meso.meta?.toUpperCase()}</h2>
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="flex items-center gap-1">
+                      <Calendar size={11} className="text-dorfin-faint" />
+                      <span className="text-dorfin-faint text-[11px]">Inicio: {format(fechaInicio, 'd MMM', { locale: es })}</span>
+                    </div>
+                    <span className="text-dorfin-border">•</span>
+                    <span className="text-dorfin-faint text-[11px]">Duración: {duracionSemanas} semanas</span>
                   </div>
-                  {(meso.historial_medidas?.length ?? 0) >= 2 && (
-                    <button onClick={() => setShowEstadisticas(true)}
-                      className="text-xs text-dorfin-muted hover:text-dorfin-green transition-colors flex items-center gap-1">
-                      <TrendingUp size={12} /> Ver estadísticas
-                    </button>
-                  )}
+                </div>
+                <div className="flex items-center gap-1.5 bg-dorfin-green/10 border border-dorfin-green/30 rounded-xl px-3 py-2 mt-1">
+                  <TrendingUp size={13} className="text-dorfin-green" />
+                  <span className="text-dorfin-green text-xs font-semibold">Sem {currentWeek} • Mes {currentMes}</span>
                 </div>
               </div>
-              <div className="relative h-2 bg-dorfin-surface rounded-full overflow-hidden">
+
+              {/* Barra de progreso */}
+              <div className="relative h-2.5 bg-dorfin-surface rounded-full overflow-hidden mb-1">
                 <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(progress, 100)}%` }}
-                  transition={{ duration: 1, ease: 'easeOut' }}
-                  className="h-full bg-gradient-green rounded-full" />
+                  transition={{ duration: 1.2, ease: 'easeOut' }}
+                  className="h-full rounded-full"
+                  style={{ background: 'linear-gradient(90deg, #22CC00 0%, #39FF14 100%)' }} />
               </div>
-              <div className="flex justify-between mt-1.5">
-                <span className="text-dorfin-faint text-xs">
-                  Inicio: {format(fechaInicio, 'd MMM', { locale: es })}
-                </span>
-                <span className="text-dorfin-muted text-xs">{Math.min(progress, 100)}%</span>
+              <div className="flex justify-end mb-3">
+                <span className="text-dorfin-text text-sm font-semibold">{Math.min(progress, 100)}%</span>
               </div>
-              <p className="text-dorfin-muted text-xs mt-2">
-                Peso inicial: <span className="text-dorfin-text font-medium">{meso.peso_inicial} kg</span>
-                <span className="ml-3">Día {diasDesdeInicio + 1}</span>
-              </p>
+
+              {/* Peso inicial + Día */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <Dumbbell size={13} className="text-dorfin-muted" />
+                  <span className="text-dorfin-muted text-xs">Peso inicial: <span className="text-dorfin-text font-semibold">{meso.peso_inicial} kg</span></span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Calendar size={13} className="text-dorfin-muted" />
+                  <span className="text-dorfin-muted text-xs font-semibold">Día {diasDesdeInicio + 1}</span>
+                </div>
+              </div>
             </div>
 
             {/* Mes actual */}
             {!cicloTerminado && (
               <div className="card p-5">
-                <h3 className="text-dorfin-muted text-xs tracking-widest uppercase mb-1">
-                  Mes {currentMes} — Progresión
-                </h3>
+                <h3 className="text-dorfin-text text-sm font-semibold uppercase tracking-widest mb-0.5">Mes {currentMes} — Progresión</h3>
                 <p className="text-dorfin-faint text-[11px] mb-5">Toca una semana para registrar medidas</p>
                 {renderSemanas(semanasDelMes)}
               </div>
             )}
+
+            {/* ── CUERPO DE DORFIN — Dashboard compacto ── */}
+            <AnimatePresence>
+              {showCuerpoSection && (
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }} className="card p-5 border-dorfin-purple/30">
+
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Shield size={16} className="text-dorfin-green" />
+                      <div>
+                        <p className="text-dorfin-text font-display text-xl leading-none">CUERPO DE DORFIN</p>
+                        <p className="text-dorfin-faint text-[10px] mt-0.5">Análisis de composición corporal</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setShowCuerpoPage(true)}
+                      className="flex items-center gap-1.5 bg-dorfin-purple/20 border border-dorfin-purple/40 rounded-xl px-3 py-1.5 hover:border-dorfin-purple transition-colors active:scale-95">
+                      <TrendingUp size={12} className="text-dorfin-purple-light" />
+                      <span className="text-dorfin-purple-light text-[11px] font-medium">Ver historial</span>
+                      <ChevronRight size={11} className="text-dorfin-purple-light" />
+                    </button>
+                  </div>
+
+                  {!resultadoGrasa ? (
+                    /* Estado vacío compacto */
+                    <div className="flex items-center gap-4 py-2">
+                      <div className="flex-1">
+                        <p className="text-dorfin-text text-sm font-semibold">Sin medidas registradas</p>
+                        <p className="text-dorfin-faint text-xs mt-0.5">Registra cuello, cintura, abdomen y cadera para activar el análisis</p>
+                      </div>
+                      <button onClick={() => setShowCuerpoPage(true)}
+                        className="flex-none flex items-center gap-1.5 btn-primary text-xs px-4 py-2">
+                        <Plus size={13} /> Iniciar
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Stats compactos en fila */}
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        {/* Grasa */}
+                        <div className="rounded-2xl p-3"
+                          style={{ background: `linear-gradient(135deg, ${colorCat}15 0%, rgba(26,21,48,0.9) 100%)`, border: `1px solid ${colorCat}30` }}>
+                          <p className="text-dorfin-faint text-[9px] uppercase tracking-wide">Grasa</p>
+                          <p className="font-display text-2xl leading-tight mt-0.5" style={{ color: colorCat }}>
+                            {resultadoGrasa.porcentaje}<span className="text-xs">%</span>
+                          </p>
+                          <p className="text-[8px] font-bold mt-0.5 px-1.5 py-0.5 rounded-full inline-block"
+                            style={{ color: colorCat, backgroundColor: `${colorCat}20` }}>
+                            {resultadoGrasa.confianza}% conf.
+                          </p>
+                        </div>
+
+                        {/* Masa muscular */}
+                        <div className="card p-3">
+                          <p className="text-dorfin-faint text-[9px] uppercase tracking-wide">Muscular</p>
+                          <p className="font-display text-2xl text-dorfin-green leading-tight mt-0.5">
+                            {resultadoGrasa.masaMuscular}<span className="text-xs"> kg</span>
+                          </p>
+                          <p className="text-dorfin-faint text-[9px] mt-0.5">estimado</p>
+                        </div>
+
+                        {/* Categoría */}
+                        <div className="card p-3">
+                          <p className="text-dorfin-faint text-[9px] uppercase tracking-wide">Categoría</p>
+                          <p className="text-[11px] font-bold leading-tight mt-1" style={{ color: colorCat }}>
+                            {resultadoGrasa.categoria}
+                          </p>
+                          <div className="flex items-center gap-1 mt-1">
+                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorCat }} />
+                            <p className="text-dorfin-faint text-[8px]">± {resultadoGrasa.margenError}%</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Mini sparkline si hay historial */}
+                      {grasaHistorial.length >= 2 && (
+                        <div className="mb-3">
+                          <SparklineGrasa historial={grasaHistorial} />
+                        </div>
+                      )}
+
+                      {/* CTA pantalla completa */}
+                      <button onClick={() => setShowCuerpoPage(true)}
+                        className="w-full flex items-center justify-center gap-2 rounded-xl border border-dorfin-green/30 bg-dorfin-green/5 py-3 text-dorfin-green text-sm font-semibold hover:bg-dorfin-green/10 transition-all active:scale-98">
+                        <Shield size={14} />
+                        Ver análisis completo del cuerpo
+                        <ChevronRight size={14} />
+                      </button>
+                    </>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+
 
             {/* Historial de meses */}
             {totalMeses > 1 && (
@@ -364,10 +562,7 @@ export default function MesocicloPage() {
                 <button onClick={() => setHistorialAbierto(!historialAbierto)}
                   className="w-full flex items-center justify-between">
                   <h3 className="text-dorfin-muted text-xs tracking-widest uppercase">Historial de meses</h3>
-                  {historialAbierto
-                    ? <ChevronUp size={16} className="text-dorfin-muted" />
-                    : <ChevronDown size={16} className="text-dorfin-muted" />
-                  }
+                  {historialAbierto ? <ChevronUp size={16} className="text-dorfin-muted" /> : <ChevronDown size={16} className="text-dorfin-muted" />}
                 </button>
                 <AnimatePresence>
                   {historialAbierto && (
@@ -437,7 +632,7 @@ export default function MesocicloPage() {
                   <div>
                     <p className="text-dorfin-muted text-xs uppercase tracking-widest mb-3">¿Cuántas semanas dura?</p>
                     <div className="grid grid-cols-4 gap-2">
-                      {(form.frecuencia_medidas === 'semanal' ? ['8', '12', '16', '24'] : ['3', '6', '9', '12']).map(s => (
+                      {(form.frecuencia_medidas === 'semanal' ? ['8','12','16','24'] : ['3','6','9','12']).map(s => (
                         <button key={s} onClick={() => setForm({ ...form, duracion_semanas: s })}
                           className={`p-3 rounded-xl text-sm font-medium border transition-all text-center ${
                             form.duracion_semanas === s ? 'bg-dorfin-green/10 border-dorfin-green text-dorfin-green' : 'card border-dorfin-border text-dorfin-muted'
@@ -470,7 +665,7 @@ export default function MesocicloPage() {
           )}
         </AnimatePresence>
 
-        {/* Sheet — Registrar medidas */}
+        {/* Sheet — Registrar medidas semana */}
         <AnimatePresence>
           {showMedidas && (
             <>
@@ -495,11 +690,9 @@ export default function MesocicloPage() {
                       value={medidasForm['peso_kg'] ?? ''}
                       onChange={e => setMedidasForm({ ...medidasForm, peso_kg: e.target.value })} />
                   </div>
-                  {MEDIDAS_CORPORALES.map(({ key, label }) => (
+                  {MEDIDAS_CORPORALES_LIST.map(({ key, label }) => (
                     <div key={key} className="flex items-center gap-3 py-1">
-                      <div className="flex-1">
-                        <p className="text-dorfin-text text-sm font-medium">{label}</p>
-                      </div>
+                      <div className="flex-1"><p className="text-dorfin-text text-sm font-medium">{label}</p></div>
                       <div className="flex items-center gap-2">
                         <input type="number" placeholder="—"
                           className="w-20 bg-dorfin-surface border border-dorfin-border rounded-xl text-center text-dorfin-text text-sm py-2 outline-none focus:border-dorfin-green transition-colors"
@@ -518,101 +711,34 @@ export default function MesocicloPage() {
           )}
         </AnimatePresence>
 
-        {/* Sheet — Ver historial de semana */}
+        {/* Sheet — Ver historial semana */}
         <AnimatePresence>
-          {showHistorial && (
+          {showHistorialMeso && (
             <>
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 bg-black/60 z-[60]" onClick={() => setShowHistorial(null)} />
+                className="fixed inset-0 bg-black/60 z-[60]" onClick={() => setShowHistorialMeso(null)} />
               <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                 className="fixed bottom-0 left-0 right-0 z-[70] bg-dorfin-card rounded-t-3xl p-6 pb-10 max-w-md mx-auto max-h-[85vh] overflow-y-auto">
                 <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-dorfin-text font-display text-2xl">Semana {showHistorial.semana}</h2>
-                  <button onClick={() => setShowHistorial(null)}><X size={20} className="text-dorfin-muted" /></button>
+                  <h2 className="text-dorfin-text font-display text-2xl">Semana {showHistorialMeso.semana}</h2>
+                  <button onClick={() => setShowHistorialMeso(null)}><X size={20} className="text-dorfin-muted" /></button>
                 </div>
                 <p className="text-dorfin-muted text-xs mb-5">
-                  Registrado el {format(parseISO(showHistorial.fecha), "d 'de' MMMM yyyy", { locale: es })}
+                  Registrado el {format(parseISO(showHistorialMeso.fecha), "d 'de' MMMM yyyy", { locale: es })}
                 </p>
                 <div className="space-y-2">
-                  {showHistorial.medidas['peso_kg'] != null && (
+                  {showHistorialMeso.medidas['peso_kg'] != null && (
                     <div className="flex items-center justify-between py-2 pb-4 border-b border-dorfin-border">
-                      <div>
-                        <p className="text-dorfin-text text-sm font-medium">Peso actual</p>
-                      </div>
-                      <span className="font-display text-xl text-dorfin-green">{showHistorial.medidas['peso_kg']} <span className="text-sm">kg</span></span>
+                      <p className="text-dorfin-text text-sm font-medium">Peso actual</p>
+                      <span className="font-display text-xl text-dorfin-green">{showHistorialMeso.medidas['peso_kg']} <span className="text-sm">kg</span></span>
                     </div>
                   )}
-                  {MEDIDAS_CORPORALES.filter(m => showHistorial.medidas[m.key] != null).map(({ key, label }) => (
+                  {MEDIDAS_CORPORALES_LIST.filter(m => showHistorialMeso.medidas[m.key] != null).map(({ key, label }) => (
                     <div key={key} className="flex items-center justify-between py-1.5">
                       <span className="text-dorfin-muted text-sm">{label}</span>
-                      <span className="font-display text-lg text-dorfin-green">{showHistorial.medidas[key]} <span className="text-xs">cm</span></span>
+                      <span className="font-display text-lg text-dorfin-green">{showHistorialMeso.medidas[key]} <span className="text-xs">cm</span></span>
                     </div>
-                  ))}
-                  {Object.keys(showHistorial.medidas).length === 0 && (
-                    <p className="text-dorfin-faint text-sm text-center py-4">Sin medidas registradas</p>
-                  )}
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
-        {/* Sheet — Estadísticas por medida */}
-        <AnimatePresence>
-          {showEstadisticas && (
-            <>
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 bg-black/60 z-[60]" onClick={() => setShowEstadisticas(false)} />
-              <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="fixed bottom-0 left-0 right-0 z-[70] bg-dorfin-card rounded-t-3xl p-6 pb-10 max-w-md mx-auto max-h-[85vh] overflow-y-auto">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h2 className="text-dorfin-text font-display text-2xl">ESTADÍSTICAS</h2>
-                    <p className="text-dorfin-muted text-xs mt-0.5">{meso?.meta} · {meso?.historial_medidas?.length} semanas registradas</p>
-                  </div>
-                  <button onClick={() => setShowEstadisticas(false)}><X size={20} className="text-dorfin-muted" /></button>
-                </div>
-
-                <div className="mt-4">
-                  {/* Peso */}
-                  {(meso?.historial_medidas?.filter(h => h.medidas['peso_kg'] != null).length ?? 0) >= 2 && (
-                    <div className="card p-4 mb-3">
-                      {(() => {
-                        const datos = (meso?.historial_medidas ?? [])
-                          .filter(h => h.medidas['peso_kg'] != null)
-                          .sort((a, b) => a.semana - b.semana)
-                        const primero = datos[0].medidas['peso_kg']
-                        const ultimo = datos[datos.length - 1].medidas['peso_kg']
-                        const diff = +(ultimo - primero).toFixed(1)
-                        return (
-                          <div className="flex items-center justify-between">
-                            <p className="text-dorfin-text text-sm font-semibold">Peso corporal</p>
-                            <div className="flex items-center gap-2">
-                              <span className="text-dorfin-faint text-xs">{primero} → {ultimo} kg</span>
-                              <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${
-                                diff === 0 ? 'text-dorfin-faint bg-dorfin-surface'
-                                : diff < 0 ? 'text-dorfin-green bg-dorfin-green/10'
-                                : 'text-red-400 bg-red-400/10'
-                              }`}>
-                                {diff > 0 ? '+' : ''}{diff} kg
-                              </span>
-                            </div>
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  )}
-
-                  {/* Medidas corporales */}
-                  {MEDIDAS_CORPORALES.map(({ key, label }) => (
-                    <MedidaTimeline
-                      key={key}
-                      historial={meso?.historial_medidas ?? []}
-                      medidaKey={key}
-                      label={label}
-                    />
                   ))}
                 </div>
               </motion.div>
@@ -633,11 +759,9 @@ export default function MesocicloPage() {
                   <h2 className="text-dorfin-text font-display text-2xl">¿QUÉ SIGUE?</h2>
                   <button onClick={() => setShowFinCiclo(false)}><X size={20} className="text-dorfin-muted" /></button>
                 </div>
-
                 <p className="text-dorfin-muted text-sm mb-6">
-                  Completaste <span className="text-dorfin-green font-semibold">{duracionSemanas} semanas</span> de <span className="text-dorfin-text font-semibold">{meso?.meta}</span>. ¿Quieres continuar o cambiar de objetivo?
+                  Completaste <span className="text-dorfin-green font-semibold">{duracionSemanas} semanas</span> de <span className="text-dorfin-text font-semibold">{meso?.meta}</span>.
                 </p>
-
                 <div className="space-y-5">
                   <div>
                     <p className="text-dorfin-muted text-xs uppercase tracking-widest mb-3">Nuevo objetivo</p>
@@ -653,11 +777,10 @@ export default function MesocicloPage() {
                       ))}
                     </div>
                   </div>
-
                   <div>
                     <p className="text-dorfin-muted text-xs uppercase tracking-widest mb-3">¿Cuántas semanas más?</p>
                     <div className="grid grid-cols-4 gap-2">
-                      {['4', '8', '12', '16'].map(s => (
+                      {['4','8','12','16'].map(s => (
                         <button key={s} onClick={() => setSemanasExtra(s)}
                           className={`p-3 rounded-xl text-sm font-medium border transition-all text-center ${
                             semanasExtra === s ? 'bg-dorfin-green/10 border-dorfin-green text-dorfin-green' : 'card border-dorfin-border text-dorfin-muted'
@@ -665,9 +788,7 @@ export default function MesocicloPage() {
                       ))}
                     </div>
                   </div>
-
-                  <button
-                    onClick={() => extenderMutation.mutate({ semanas_extra: Number(semanasExtra), meta: nuevaMeta })}
+                  <button onClick={() => extenderMutation.mutate({ semanas_extra: Number(semanasExtra), meta: nuevaMeta })}
                     disabled={extenderMutation.isPending || !nuevaMeta}
                     className="btn-primary w-full flex items-center justify-center gap-2">
                     {extenderMutation.isPending
@@ -680,7 +801,61 @@ export default function MesocicloPage() {
             </>
           )}
         </AnimatePresence>
+
+        {/* Sheet — Info */}
+        <AnimatePresence>
+          {showInfo && (
+            <>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/60 z-[60]" onClick={() => setShowInfo(false)} />
+              <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="fixed bottom-0 left-0 right-0 z-[70] bg-dorfin-card rounded-t-3xl p-6 pb-10 max-w-md mx-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-dorfin-text font-display text-2xl">¿CÓMO FUNCIONA?</h2>
+                  <button onClick={() => setShowInfo(false)}><X size={20} className="text-dorfin-muted" /></button>
+                </div>
+                <div className="space-y-3 text-sm text-dorfin-muted">
+                  <p>DORFIN combina <span className="text-dorfin-text font-medium">5 métodos antropométricos</span>:</p>
+                  {['US Navy (DoD, 1986)', 'YMCA (Golding, 1989)', 'WHtR — Lean et al. (1996)', 'IMC — Gallagher et al. (2000)', 'Modelo DORFIN v2'].map(m => (
+                    <div key={m} className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-dorfin-green" />
+                      <span>{m}</span>
+                    </div>
+                  ))}
+                  <p className="text-dorfin-faint text-xs leading-relaxed mt-3">
+                    El resultado es una <span className="text-dorfin-text">estimación</span>. La utilidad está en seguir tu <span className="text-dorfin-text">progreso</span>, no en la cifra exacta.
+                  </p>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
+
+      {/* ── PANTALLA COMPLETA CUERPO DE DORFIN ──────────────────
+          Montada sobre todo el layout con z-index alto.
+          Se abre al pulsar "Cuerpo de DORFIN" o "Ver análisis completo". */}
+      <AnimatePresence>
+        {showCuerpoPage && (
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+            className="fixed inset-0 z-[80]"
+          >
+            <CuerpoDorfinPage
+              onClose={() => setShowCuerpoPage(false)}
+              medidasMeso={
+                meso?.historial_medidas?.length
+                  ? (meso.historial_medidas[meso.historial_medidas.length - 1].medidas ?? null)
+                  : null
+              }
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

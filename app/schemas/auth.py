@@ -10,6 +10,7 @@ class RegisterRequest(BaseModel):
     altura: int
     peso: int
     meta: str
+    sexo: str = 'hombre'
 
 
 class LoginRequest(BaseModel):
@@ -41,6 +42,7 @@ class UserResponse(BaseModel):
     peso: Optional[int] = None
     meta: Optional[str] = None
     foto_url: Optional[str] = None
+    sexo: Optional[str] = None
     fecha_creacion: Optional[str] = None
 
     class Config:

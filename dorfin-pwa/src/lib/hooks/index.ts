@@ -190,3 +190,42 @@ export function useAgregarMedidas() {
     onError: () => toast.error('Error al guardar medidas'),
   })
 }
+export function useGrasaCorporal() {
+  const user = useAuthStore((s) => s.user)
+  
+  // Leer medidas guardadas en localStorage
+  const storageKey = `dorfin-grasa-u${user?.id}`
+  
+  const getMedidas = () => {
+    try {
+      return JSON.parse(localStorage.getItem(storageKey) || 'null')
+    } catch { return null }
+  }
+
+  const saveMedidas = (medidas: Record<string, number | string>) => {
+    localStorage.setItem(storageKey, JSON.stringify({
+      ...medidas,
+      fecha: new Date().toISOString(),
+    }))
+  }
+
+  const getHistorial = (): any[] => {
+    try {
+      return JSON.parse(localStorage.getItem(`${storageKey}-historial`) || '[]')
+    } catch { return [] }
+  }
+
+  const saveHistorial = (resultado: any, medidas: any) => {
+    const hist = getHistorial()
+    hist.push({
+      fecha: new Date().toISOString().split('T')[0],
+      porcentaje: resultado.porcentaje,
+      confianza: resultado.confianza,
+      peso: medidas.peso,
+      medidas,
+    })
+    localStorage.setItem(`${storageKey}-historial`, JSON.stringify(hist))
+  }
+
+  return { getMedidas, saveMedidas, getHistorial, saveHistorial, user }
+}
