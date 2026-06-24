@@ -41,14 +41,15 @@ export interface MedidasCorporales {
 }
 
 export interface ResultadoGrasa {
-  porcentaje:   number
-  margenError:  number
-  confianza:    number
-  masaMuscular: number
-  masaGrasa:    number
-  categoria:    string
-  descripcion:  string
-  metodos:      { nombre: string; valor: number; peso: number }[]
+  porcentaje:     number
+  margenError:    number
+  confianza:      number
+  masaMuscular:   number
+  masaGrasa:      number
+  masaLibreGrasa: number  // peso - masa grasa (músculo + hueso + agua + órganos)
+  categoria:      string
+  descripcion:    string
+  metodos:        { nombre: string; valor: number; peso: number }[]
 }
 
 // ── Conversiones internas ────────────────────────────────────
@@ -262,63 +263,68 @@ function promedioOpcional(a?: number, b?: number): number | null {
 // ══════════════════════════════════════════════════════════════
 
 function calcularConfianza(m: MedidasCorporales, metodosActivos: number): number {
-  let puntos = 0
+  // ─────────────────────────────────────────────────────────────────────────
+  // SISTEMA DE CONFIANZA v3 — escala recalibrada
+  // Objetivo: Navy completo (cuello+abdomen+cadera+perfil) → 60-65%
+  //           + recomendados (hombros+pecho+bíceps) → 75-85%
+  //           + avanzados (muñeca+tobillo+anchura) → 90-100%
+  // ─────────────────────────────────────────────────────────────────────────
+  let pts = 0
 
-  // CAPA 1 — Base mínima calculable (máx 40)
-  // Sin estos datos ningún método funciona correctamente
-  if (m.sexo)    puntos += 8
-  if (m.edad)    puntos += 4
-  if (m.altura)  puntos += 4
-  if (m.peso)    puntos += 6
-  if (m.cuello)  puntos += 8   // crítico para Navy
-  if (m.cintura) puntos += 5
-  if (m.abdomen) puntos += 5   // crítico para Navy hombre
+  // ── BLOQUE A: Perfil biométrico (máx 22) ─────────────────────────────────
+  // Son datos del perfil del usuario, no medidas adicionales.
+  // Se consideran siempre presentes si el perfil está completo.
+  if (m.sexo)   pts += 6
+  if (m.edad)   pts += 4
+  if (m.altura) pts += 4
+  if (m.peso)   pts += 8   // peso es crítico para YMCA y Gallagher
 
-  // CAPA 2 — Circunferencias primarias (máx 25)
-  // Cada una activa o refina al menos un método adicional
-  if (m.cadera)  puntos += 8   // activa Navy mujer y WHR
-  if (m.hombros) puntos += 6   // mejora modeloDorfin
-  if (m.pecho)   puntos += 5
+  // ── BLOQUE B: Circunferencias Navy (máx 38) ───────────────────────────────
+  // Son los datos que activan US Navy, el método de mayor peso (×3.0).
+  // Con A+B completos → 60 pts → 60% confianza.
+  if (m.cuello)  pts += 10  // esencial para Navy hombre y mujer
+  if (m.cintura) pts += 8   // esencial para YMCA y WHtR
+  if (m.abdomen) pts += 10  // esencial para Navy hombre
+  if (m.cadera)  pts += 10  // esencial para Navy mujer
+
+  // ── BLOQUE C: Circunferencias primarias (máx 22) ─────────────────────────
+  // Cada una refina el Modelo DORFIN. Con C completo → ~82% confianza.
+  if (m.hombros) pts += 6
+  if (m.pecho)   pts += 5
   const bicep = promedioOpcional(m.bicep_der, m.bicep_izq)
   if (bicep !== null) {
-    puntos += m.bicep_der && m.bicep_izq ? 6 : 3  // ambos vale más que uno
+    pts += (m.bicep_der && m.bicep_izq) ? 5 : 3  // ambos laterales valen más
   }
 
-  // CAPA 3 — Circunferencias secundarias (máx 20)
+  // ── BLOQUE D: Circunferencias secundarias (máx 13) ───────────────────────
   const muslo = promedioOpcional(m.muslo_der, m.muslo_izq)
-  if (muslo !== null) {
-    puntos += m.muslo_der && m.muslo_izq ? 6 : 3
-  }
-  const pantorrilla = promedioOpcional(m.pantorrilla_der, m.pantorrilla_izq)
-  if (pantorrilla !== null) {
-    puntos += m.pantorrilla_der && m.pantorrilla_izq ? 5 : 2
-  }
-  const antebrazo = promedioOpcional(m.antebrazo_der, m.antebrazo_izq)
-  if (antebrazo !== null) {
-    puntos += m.antebrazo_der && m.antebrazo_izq ? 4 : 2
-  }
-  if (m.anchura_cadera)  puntos += 5   // proporcionalidad avanzada
+  if (muslo !== null)  pts += (m.muslo_der && m.muslo_izq) ? 4 : 2
 
-  // CAPA 4 — Estructura corporal (máx 15)
-  // Doble indicador es mucho más fiable que uno solo
+  const pant = promedioOpcional(m.pantorrilla_der, m.pantorrilla_izq)
+  if (pant !== null)   pts += (m.pantorrilla_der && m.pantorrilla_izq) ? 3 : 1
+
+  const ant = promedioOpcional(m.antebrazo_der, m.antebrazo_izq)
+  if (ant !== null)    pts += (m.antebrazo_der && m.antebrazo_izq) ? 3 : 1
+
+  if (m.anchura_cadera) pts += 3
+
+  // ── BLOQUE E: Estructura corporal / frame size (máx 18) ──────────────────
+  // Muñeca + tobillo juntos dan frame size fiable → ajuste más preciso.
   if (m.muneca && m.tobillo) {
-    puntos += 15   // ambos juntos dan frame size fiable
+    pts += 10
   } else if (m.muneca || m.tobillo) {
-    puntos += 7
+    pts += 5
   }
-  if (m.anchura_hombros) puntos += 8
+  if (m.anchura_hombros) pts += 5
+  if (m.altura_sentado)  pts += 3
 
-  // CAPA 5 — Proporcionalidad avanzada (solo suma si hay estructura)
-  if (m.altura_sentado && m.altura) {
-    puntos += 6
-  }
+  // ── Penalización por pocos métodos activos ────────────────────────────────
+  // Si solo hay 1 método no podemos cruzar resultados → cap en 50%
+  // Si hay 2 métodos → cap en 70%
+  if (metodosActivos < 2) pts = Math.min(pts, 50)
+  else if (metodosActivos < 3) pts = Math.min(pts, 70)
 
-  // Penalización si pocos métodos están activos
-  // Con 1 solo método no se puede tener alta confianza
-  if (metodosActivos < 2) puntos = Math.min(puntos, 45)
-  if (metodosActivos < 3) puntos = Math.min(puntos, 65)
-
-  return Math.min(Math.round(puntos), 100)
+  return Math.min(Math.round(pts), 100)
 }
 
 function calcularMargenError(confianza: number): number {
@@ -351,6 +357,188 @@ function getCategoria(pct: number, sexo: 'hombre' | 'mujer'): { categoria: strin
   }
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// VALIDACIÓN ANTROPOMÉTRICA
+// Detecta proporciones inusuales y genera advertencias.
+// No bloquea — solo informa. El usuario decide si continuar.
+// ══════════════════════════════════════════════════════════════
+
+export interface AdvertenciaAntropometrica {
+  campo:   string
+  mensaje: string
+  // 'info'            → proporción inusual, puede ser real
+  // 'advertencia'     → proporción poco común, verificar
+  // 'error_digitacion'→ valor fuera de rango fisiológico adulto
+  //                     alta probabilidad de error al escribir
+  nivel:   'info' | 'advertencia' | 'error_digitacion'
+}
+
+export function validarMedidas(m: Partial<Record<string, number>> & { sexo?: string; peso?: number; altura?: number }): AdvertenciaAntropometrica[] {
+  const w: AdvertenciaAntropometrica[] = []
+  const n = (k: string) => m[k] as number | undefined
+
+  const cuello       = n('cuello')
+  const cintura      = n('cintura')
+  const abdomen      = n('abdomen')
+  const cadera       = n('cadera')
+  const hombros      = n('hombros')
+  const pecho        = n('pecho')
+  const muslo_der    = n('muslo_der')
+  const muslo_izq    = n('muslo_izq')
+  const pant_der     = n('pantorrilla_der')
+  const pant_izq     = n('pantorrilla_izq')
+  const muneca       = n('muneca')
+  const tobillo      = n('tobillo')
+  const anchHombros  = n('anchura_hombros')
+  const anchCadera   = n('anchura_cadera')
+  const peso         = m.peso
+  const altura       = m.altura
+  const sexo         = m.sexo
+
+  // ── Proporciones cuello / cintura ─────────────────────────────
+  if (cuello && cintura) {
+    // Fisiológicamente, el cuello nunca supera el 75% de la cintura
+    if (cuello > cintura * 0.75) {
+      w.push({ campo: 'cuello', nivel: 'advertencia',
+        mensaje: `Cuello (${cuello} cm) inusualmente grande respecto a cintura (${cintura} cm). Verifica la medición.` })
+    }
+    // Cuello muy pequeño tampoco es normal (< 28 cm adulto)
+    if (cuello < 28) {
+      w.push({ campo: 'cuello', nivel: 'advertencia',
+        mensaje: `Cuello (${cuello} cm) parece muy pequeño para un adulto. ¿Está en centímetros?` })
+    }
+  }
+
+  // ── Abdomen vs cintura ────────────────────────────────────────
+  // El abdomen (ombligo) suele ser igual o mayor que la cintura
+  if (cintura && abdomen && cintura > abdomen * 1.15) {
+    w.push({ campo: 'abdomen', nivel: 'advertencia',
+      mensaje: `Cintura (${cintura} cm) mayor que abdomen (${abdomen} cm) en más de 15%. Generalmente el abdomen es igual o mayor.` })
+  }
+
+  // ── Cadera vs cintura ─────────────────────────────────────────
+  if (cintura && cadera) {
+    if (cadera < cintura) {
+      w.push({ campo: 'cadera', nivel: 'advertencia',
+        mensaje: `Cadera (${cadera} cm) menor que cintura (${cintura} cm). Esto es inusual. ¿Las mediciones están invertidas?` })
+    }
+    // Cadera excesivamente pequeña
+    if (cadera < 70) {
+      w.push({ campo: 'cadera', nivel: 'advertencia',
+        mensaje: `Cadera (${cadera} cm) parece muy pequeña. Verifica que sea la circunferencia en el punto más ancho.` })
+    }
+  }
+
+  // ── Pantorrillas vs muslos ────────────────────────────────────
+  const muslo = muslo_der ?? muslo_izq
+  const pant  = pant_der  ?? pant_izq
+  if (muslo && pant && pant > muslo * 0.85) {
+    w.push({ campo: 'pantorrilla_der', nivel: 'advertencia',
+      mensaje: `Pantorrilla (${pant} cm) muy cercana o mayor que muslo (${muslo} cm). Verifica ambas mediciones.` })
+  }
+  if (pant && pant > 65) {
+    w.push({ campo: 'pantorrilla_der', nivel: 'advertencia',
+      mensaje: `Pantorrilla (${pant} cm) excepcionalmente grande. ¿Está en centímetros?` })
+  }
+
+  // ── Bíceps vs hombros / pecho ─────────────────────────────────
+  const bicep = n('bicep_der') ?? n('bicep_izq')
+  if (bicep && pecho && bicep > pecho * 0.55) {
+    w.push({ campo: 'bicep_der', nivel: 'advertencia',
+      mensaje: `Bícep (${bicep} cm) inusualmente grande respecto al pecho (${pecho} cm).` })
+  }
+
+  // ── Anchura hombros vs cadera ─────────────────────────────────
+  if (anchHombros && anchCadera && sexo === 'mujer' && anchHombros > anchCadera * 1.3) {
+    w.push({ campo: 'anchura_hombros', nivel: 'info',
+      mensaje: `Anchura de hombros (${anchHombros} cm) notablemente mayor que la cadera (${anchCadera} cm). Inusual en mujeres pero posible en atletas.` })
+  }
+
+  // ── Anchura hombros vs circunferencia hombros ─────────────────
+  // La anchura biacromial suele ser 38-50 cm; la circunferencia 90-140 cm
+  if (anchHombros && hombros && anchHombros > hombros * 0.45) {
+    w.push({ campo: 'anchura_hombros', nivel: 'advertencia',
+      mensaje: `Anchura de hombros (${anchHombros} cm) parece grande en relación a la circunferencia (${hombros} cm). ¿Confundiste anchura con circunferencia?` })
+  }
+
+  // ── Muñeca y tobillo: rangos fisiológicos ────────────────────
+  if (muneca) {
+    if (muneca < 10 || muneca > 30) {
+      // Imposible fisiológicamente → probable error de digitación
+      w.push({ campo: 'muneca', nivel: 'error_digitacion',
+        mensaje: `Muñeca (${muneca} cm) imposible en un adulto. Rango real: 13-24 cm. ¿Escribiste el valor correcto?` })
+    } else if (muneca < 13 || muneca > 24) {
+      w.push({ campo: 'muneca', nivel: 'advertencia',
+        mensaje: `Muñeca (${muneca} cm) fuera del rango adulto típico (13-24 cm). Verifica la medición.` })
+    }
+  }
+  if (tobillo) {
+    if (tobillo < 12 || tobillo > 45) {
+      w.push({ campo: 'tobillo', nivel: 'error_digitacion',
+        mensaje: `Tobillo (${tobillo} cm) imposible en un adulto. Rango real: 18-35 cm. ¿Escribiste el valor correcto?` })
+    } else if (tobillo < 18 || tobillo > 35) {
+      w.push({ campo: 'tobillo', nivel: 'advertencia',
+        mensaje: `Tobillo (${tobillo} cm) fuera del rango adulto típico (18-35 cm). Verifica la medición.` })
+    }
+  }
+
+  // ── Cuello: rango absoluto (error de digitación) ─────────────
+  if (cuello) {
+    if (cuello > 60) {
+      w.push({ campo: 'cuello', nivel: 'error_digitacion',
+        mensaje: `Cuello (${cuello} cm) imposible en un adulto. El máximo registrado en humanos es ~60 cm. ¿Confundiste cuello con hombros?` })
+    } else if (cuello < 25) {
+      w.push({ campo: 'cuello', nivel: 'error_digitacion',
+        mensaje: `Cuello (${cuello} cm) extremadamente pequeño. El mínimo adulto es ~28 cm. ¿Está en centímetros?` })
+    }
+  }
+
+  // ── Pantorrilla: rango absoluto ───────────────────────────────
+  if (pant) {
+    if (pant > 75) {
+      w.push({ campo: 'pantorrilla_der', nivel: 'error_digitacion',
+        mensaje: `Pantorrilla (${pant} cm) imposible fisiológicamente. El máximo mundial es ~65 cm. ¿Está en centímetros?` })
+    }
+  }
+
+  // ── Cintura mínima ────────────────────────────────────────────
+  if (cintura && cintura < 50) {
+    w.push({ campo: 'cintura', nivel: 'error_digitacion',
+      mensaje: `Cintura (${cintura} cm) extremadamente pequeña para un adulto. ¿Está en centímetros?` })
+  }
+
+  // ── Altura sentado vs altura total ────────────────────────────
+  const alturaSentado = n('altura_sentado')
+  if (alturaSentado && altura) {
+    if (alturaSentado >= altura) {
+      w.push({ campo: 'altura_sentado', nivel: 'error_digitacion',
+        mensaje: `Altura sentado (${alturaSentado} cm) mayor o igual a la altura total (${altura} cm). Esto es imposible.` })
+    } else {
+      const ratio = alturaSentado / altura
+      if (ratio < 0.44 || ratio > 0.60) {
+        w.push({ campo: 'altura_sentado', nivel: 'advertencia',
+          mensaje: `Altura sentado (${alturaSentado} cm) inusual respecto a la altura total (${altura} cm). El ratio esperado es 44-60%.` })
+      }
+    }
+  }
+
+  // ── Peso vs altura (IMC extremo) ─────────────────────────────
+  if (peso && altura) {
+    const imc = peso / ((altura / 100) ** 2)
+    if (imc < 14) {
+      w.push({ campo: 'peso', nivel: 'advertencia',
+        mensaje: `IMC calculado (${imc.toFixed(1)}) extremadamente bajo. ¿El peso está en kilogramos?` })
+    }
+    if (imc > 55) {
+      w.push({ campo: 'peso', nivel: 'info',
+        mensaje: `IMC calculado (${imc.toFixed(1)}) muy alto. El margen de error del sistema aumenta en estos rangos.` })
+    }
+  }
+
+  return w
+}
+
 // ══════════════════════════════════════════════════════════════
 // FUNCIÓN PRINCIPAL
 // ══════════════════════════════════════════════════════════════
@@ -381,11 +569,12 @@ export function calcularGrasaCorporal(m: MedidasCorporales): ResultadoGrasa {
   porcentaje    += ajusteEstructuraCorporal(m)
   porcentaje     = Math.max(3, Math.min(55, +porcentaje.toFixed(1)))
 
-  const confianza    = calcularConfianza(m, metodos.length)
-  const margenError  = calcularMargenError(confianza)
-  const masaGrasa    = +(m.peso * porcentaje / 100).toFixed(1)
-  const masaMuscular = +(m.peso * (1 - porcentaje / 100) * 0.85).toFixed(1)
+  const confianza      = calcularConfianza(m, metodos.length)
+  const margenError    = calcularMargenError(confianza)
+  const masaGrasa      = +(m.peso * porcentaje / 100).toFixed(1)
+  const masaLibreGrasa = +(m.peso - masaGrasa).toFixed(1)       // todo lo que no es grasa
+  const masaMuscular   = +(masaLibreGrasa * 0.85).toFixed(1)    // ~85% de la masa libre es músculo
   const { categoria, descripcion } = getCategoria(porcentaje, m.sexo)
 
-  return { porcentaje, margenError, confianza, masaMuscular, masaGrasa, categoria, descripcion, metodos }
+  return { porcentaje, margenError, confianza, masaMuscular, masaGrasa, masaLibreGrasa, categoria, descripcion, metodos }
 }

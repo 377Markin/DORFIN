@@ -45,16 +45,6 @@ export interface RegisterRequest {
   altura: number
   peso: number
   meta: string
-}
-
-export interface RegisterRequest {
-  nombre: string
-  email: string
-  contrasena: string
-  fecha_nacimiento: string
-  altura: number
-  peso: number
-  meta: string
   sexo: string
 }
 
@@ -199,3 +189,95 @@ export interface ActiveExercise {
   sets: ActiveSet[]
   totalSeries: number
 }
+// ── Composición corporal — Medidas ───────────────────────────
+// Todas las medidas que el usuario puede ingresar.
+// El formulario semanal y CuerpoDorfinPage comparten esta estructura.
+export interface MedidasFormulario {
+  // Obligatorias (activan US Navy)
+  cuello:   number
+  cintura:  number
+  abdomen:  number
+  cadera:   number
+
+  // Recomendadas (mejoran Modelo DORFIN)
+  hombros?:         number
+  pecho?:           number
+  bicep_der?:       number
+  bicep_izq?:       number
+  muslo_der?:       number
+  muslo_izq?:       number
+  pantorrilla_der?: number
+  pantorrilla_izq?: number
+  antebrazo_der?:   number
+  antebrazo_izq?:   number
+
+  // Avanzadas (frame size + proporcionalidad)
+  muneca?:          number
+  tobillo?:         number
+  anchura_hombros?: number
+  anchura_cadera?:  number
+  altura_sentado?:  number
+}
+
+// ── Composición corporal — Historial ─────────────────────────
+// Una entrada por medición guardada en localStorage.
+// Diseñado para compatibilidad hacia atrás: todos los campos
+// nuevos son opcionales. Entradas antiguas siguen siendo válidas.
+export interface EntradaHistorial {
+  fecha:           string     // ISO date YYYY-MM-DD
+  peso:            number     // kg
+
+  // Resultado de grasa
+  grasa:           number     // % grasa estimado
+  margenError?:    number     // ± porcentaje
+  confianza?:      number     // 0-100
+  categoria?:      string     // 'Atlético', 'Promedio', etc.
+
+  // Composición — NOTA: masaMuscular es ESTIMACIÓN, no medición real.
+  // Representa aprox. el 85% de la masa libre de grasa.
+  masaMuscular?:   number     // kg — estimado
+  masaGrasa?:      number     // kg — calculado de grasa%
+  masaLibreGrasa?: number     // kg — peso - masaGrasa (músculo+hueso+agua+órganos)
+
+  // Medidas para gráficas individuales (extraídas del objeto medidas)
+  cintura?:        number     // cm — campo separado para la gráfica
+  cuello?:         number     // cm
+  abdomen?:        number     // cm
+  cadera?:         number     // cm
+
+  // Objeto completo de medidas — todo lo que el usuario ingresó
+  medidas?:        Record<string, number>
+
+  // Retrocompatibilidad con entradas antiguas que usaban 'porcentaje'
+  porcentaje?:     number     // alias de grasa — DEPRECATED, usar grasa
+}
+
+// ── Composición corporal — Niveles de precisión ───────────────
+// Mapea el % de confianza a un nivel visual para la barra de precisión.
+export type NivelPrecision = 'baja' | 'media' | 'alta' | 'muy_alta'
+
+export function confianzaANivel(confianza: number): NivelPrecision {
+  if (confianza >= 85) return 'muy_alta'
+  if (confianza >= 70) return 'alta'
+  if (confianza >= 50) return 'media'
+  return 'baja'
+}
+
+export const LABEL_PRECISION: Record<NivelPrecision, string> = {
+  baja:     'Baja',
+  media:    'Media',
+  alta:     'Alta',
+  muy_alta: 'Muy alta',
+}
+
+export const COLOR_PRECISION: Record<NivelPrecision, string> = {
+  baja:     '#f87171',   // rojo
+  media:    '#fb923c',   // naranja
+  alta:     '#facc15',   // amarillo
+  muy_alta: '#39FF14',   // verde DORFIN
+}
+
+// ── Advertencia antropométrica (re-exportada desde bodyfat.ts) ──
+// Se define en bodyfat.ts y se re-exporta aquí para que los
+// componentes solo necesiten importar desde @/types.
+export type { AdvertenciaAntropometrica } from '@/lib/bodyfat'

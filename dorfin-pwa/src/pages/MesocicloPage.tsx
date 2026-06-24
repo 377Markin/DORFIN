@@ -1,33 +1,53 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, Plus, TrendingUp, X, ChevronDown, ChevronUp, Lock, Trophy, ChevronRight, Info, Shield, Calendar, Dumbbell } from 'lucide-react'
+import { Check, Plus, TrendingUp, X, ChevronDown, ChevronUp, Lock, ChevronRight, Shield, Calendar, Dumbbell, AlertTriangle, AlertCircle, Trophy } from 'lucide-react'
 import CuerpoDorfinPage from '@/pages/CuerpoDorfinPage'
-import { useMesocicloActivo, useCreateMesociclo, useAgregarMedidas } from '@/lib/hooks'
+import { useMesocicloActivo, useCreateMesociclo, useAgregarMedidas, useGrasaCorporal } from '@/lib/hooks'
 import { Skeleton, PageHeader } from '@/components/shared'
 import { differenceInDays, differenceInWeeks, parseISO, format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { mesociclosApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { calcularGrasaCorporal, type MedidasCorporales } from '@/lib/bodyfat'
-import { useGrasaCorporal } from '@/lib/hooks'
-import type { MedidaSnapshot } from '@/types'
+import { calcularGrasaCorporal, validarMedidas, type MedidasCorporales } from '@/lib/bodyfat'
+import { confianzaANivel, LABEL_PRECISION, COLOR_PRECISION } from '@/types'
+import type { MedidaSnapshot, User } from '@/types'
 
 const METAS = ['Hipertrofia', 'Definición', 'Fuerza', 'Powerlifting', 'Resistencia', 'Pérdida de peso', 'Mantenimiento']
 
-const MEDIDAS_CORPORALES_LIST = [
-  { key: 'cuello',          label: 'Cuello' },
+// ── Grupos de medidas del formulario semanal ─────────────────
+// Estructurado en 3 grupos progresivos para no abrumar al usuario.
+const GRUPO_OBLIGATORIOS = [
+  { key: 'cuello',   label: 'Cuello',   hint: 'Circunferencia del cuello' },
+  { key: 'cintura',  label: 'Cintura',  hint: 'A la altura del ombligo' },
+  { key: 'abdomen',  label: 'Abdomen',  hint: 'Punto más ancho del abdomen' },
+  { key: 'cadera',   label: 'Cadera',   hint: 'Punto más ancho de la cadera' },
+]
+
+const GRUPO_RECOMENDADOS = [
   { key: 'hombros',         label: 'Hombros' },
   { key: 'pecho',           label: 'Pecho' },
   { key: 'bicep_der',       label: 'Bícep derecho' },
   { key: 'bicep_izq',       label: 'Bícep izquierdo' },
-  { key: 'cintura',         label: 'Cintura' },
-  { key: 'abdomen',         label: 'Abdomen' },
-  { key: 'cadera',          label: 'Cadera' },
   { key: 'muslo_der',       label: 'Muslo derecho' },
   { key: 'muslo_izq',       label: 'Muslo izquierdo' },
   { key: 'pantorrilla_der', label: 'Pantorrilla derecha' },
   { key: 'pantorrilla_izq', label: 'Pantorrilla izquierda' },
+]
+
+const GRUPO_AVANZADOS = [
+  { key: 'muneca',          label: 'Muñeca',          hint: 'Circunferencia de la muñeca' },
+  { key: 'tobillo',         label: 'Tobillo',         hint: 'Circunferencia del tobillo' },
+  { key: 'anchura_hombros', label: 'Anchura hombros', hint: 'Ancho biacromial (hombro a hombro)' },
+  { key: 'anchura_cadera',  label: 'Anchura cadera',  hint: 'Ancho biilíaco (cadera a cadera)' },
+  { key: 'altura_sentado',  label: 'Altura sentado',  hint: 'Desde el asiento hasta el vértice de la cabeza' },
+]
+
+// Mantener lista plana para compatibilidad con código existente
+const MEDIDAS_CORPORALES_LIST = [
+  ...GRUPO_OBLIGATORIOS,
+  ...GRUPO_RECOMENDADOS,
+  ...GRUPO_AVANZADOS,
 ]
 
 const ANOTACIONES = [
@@ -73,19 +93,20 @@ function getColorCategoria(cat: string) {
   return '#f87171'
 }
 
-function SparklineGrasa({ historial }: { historial: { fecha: string; porcentaje: number }[] }) {
+function SparklineGrasa({ historial }: { historial: { fecha: string; porcentaje?: number; grasa?: number }[] }) {
   if (historial.length < 2) return null
-  const valores = historial.map(h => h.porcentaje)
+  // Compatibilidad hacia atrás: entradas antiguas usan 'porcentaje', nuevas usan 'grasa'
+  const valores = historial.map(h => (h.grasa ?? h.porcentaje ?? 0))
   const min = Math.min(...valores)
   const max = Math.max(...valores)
   const rango = max - min || 1
   const w = 280, h = 60
   const pts = historial.map((entry, i) => ({
     x: (i / (historial.length - 1)) * w,
-    y: h - ((entry.porcentaje - min) / rango) * h * 0.8 - h * 0.1,
+    y: h - (((entry.grasa ?? entry.porcentaje ?? 0) - min) / rango) * h * 0.8 - h * 0.1,
   }))
   const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-  const diff = +(historial[historial.length-1].porcentaje - historial[0].porcentaje).toFixed(1)
+  const diff = +(valores[valores.length-1] - valores[0]).toFixed(1)
 
   return (
     <div className="card p-4">
@@ -123,13 +144,442 @@ function SparklineGrasa({ historial }: { historial: { fecha: string; porcentaje:
   )
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// COMPONENTE: SheetMedidas
+// Sheet de registro semanal — fuente única de captura de datos.
+// 3 grupos progresivos: Obligatorios → Recomendados → Avanzados.
+// Barra de precisión en tiempo real basada en confianza calculada.
+// ══════════════════════════════════════════════════════════════
+
+interface SheetMedidasProps {
+  semana:          number
+  form:            Record<string, string>
+  setForm:         (f: Record<string, string>) => void
+  onClose:         () => void
+  onGuardar:       () => void
+  isPending:       boolean
+  user:            User | null
+  edad:            number
+  cuerpoFormPrevio:Record<string, string>
+}
+
+function CampoMedida({
+  campo, unit, form, setForm, advertencias
+}: {
+  campo:       { key: string; label: string; hint?: string }
+  unit:        string
+  form:        Record<string, string>
+  setForm:     (f: Record<string, string>) => void
+  advertencias: ReturnType<typeof validarMedidas>
+}) {
+  const val     = form[campo.key] ?? ''
+  const adv     = advertencias.filter(a => a.campo === campo.key)
+  const esError = adv.some(a => a.nivel === 'error_digitacion')
+  const esAviso = !esError && adv.length > 0
+  const lleno   = val.length > 0
+
+  return (
+    <div className="space-y-1">
+      <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+        esError ? 'border-red-500/60 bg-red-500/5'
+        : esAviso ? 'border-amber-500/50 bg-amber-500/5'
+        : lleno  ? 'border-dorfin-green/30 bg-dorfin-green/5'
+        : 'border-dorfin-border bg-dorfin-surface/30'
+      }`}>
+        {/* Checkmark o estado */}
+        <div className={`w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 ${
+          lleno ? 'bg-dorfin-green border-dorfin-green' : 'border-dorfin-border'
+        }`}>
+          {lleno && <Check size={9} className="text-dorfin-bg" />}
+        </div>
+
+        {/* Label + hint */}
+        <div className="flex-1 min-w-0">
+          <p className="text-dorfin-text text-sm font-medium leading-tight">{campo.label}</p>
+          {campo.hint && !lleno && (
+            <p className="text-dorfin-faint text-[10px] leading-tight mt-0.5 truncate">{campo.hint}</p>
+          )}
+        </div>
+
+        {/* Input */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <input
+            type="number"
+            inputMode="decimal"
+            placeholder="—"
+            value={val}
+            onChange={e => setForm({ ...form, [campo.key]: e.target.value })}
+            className={`w-16 text-center text-sm py-1.5 px-2 rounded-lg outline-none transition-colors bg-dorfin-bg border ${
+              esError ? 'border-red-500 text-red-400'
+              : lleno  ? 'border-dorfin-green/40 text-dorfin-text'
+              : 'border-dorfin-border text-dorfin-text'
+            }`}
+            style={{ width: 60 }}
+          />
+          <span className="text-dorfin-faint text-[11px] w-5">{unit}</span>
+        </div>
+      </div>
+
+      {/* Advertencias bajo el campo */}
+      {adv.map((a, i) => (
+        <div key={i} className={`flex items-start gap-1.5 px-3 py-1.5 rounded-lg ${
+          a.nivel === 'error_digitacion'
+            ? 'bg-red-500/10 border border-red-500/30'
+            : 'bg-amber-500/10 border border-amber-500/20'
+        }`}>
+          {a.nivel === 'error_digitacion'
+            ? <AlertCircle size={11} className="text-red-400 mt-0.5 flex-shrink-0" />
+            : <AlertTriangle size={11} className="text-amber-400 mt-0.5 flex-shrink-0" />
+          }
+          <p className={`text-[10px] leading-relaxed ${
+            a.nivel === 'error_digitacion' ? 'text-red-300' : 'text-amber-300'
+          }`}>{a.mensaje}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function BarraPrecision({ confianza, metodosActivos }: { confianza: number; metodosActivos: string[] }) {
+  const nivel  = confianzaANivel(confianza)
+  const label  = LABEL_PRECISION[nivel]
+  const color  = COLOR_PRECISION[nivel]
+  const ancho  = Math.min(confianza, 100)
+
+  const TODOS_METODOS = ['US Navy', 'YMCA', 'WHtR (Lean)', 'IMC (Gallagher)', 'Modelo DORFIN']
+
+  return (
+    <div className="bg-dorfin-surface rounded-2xl p-4 border border-dorfin-border/50">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-dorfin-muted text-[10px] uppercase tracking-widest">Precisión DORFIN</p>
+        <span className="text-xs font-bold" style={{ color }}>{label} — {confianza}%</span>
+      </div>
+
+      {/* Barra */}
+      <div className="h-2 bg-dorfin-bg rounded-full overflow-hidden mb-2">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${ancho}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="h-full rounded-full"
+          style={{ background: `linear-gradient(90deg, ${color}80, ${color})` }}
+        />
+      </div>
+
+      {/* Tiers */}
+      <div className="flex justify-between mb-3">
+        {(['baja', 'media', 'alta', 'muy_alta'] as const).map(n => (
+          <span key={n} className="text-[9px]" style={{
+            color: n === nivel ? COLOR_PRECISION[n] : '#4A4468',
+            fontWeight: n === nivel ? 700 : 400,
+          }}>
+            {LABEL_PRECISION[n]}
+          </span>
+        ))}
+      </div>
+
+      {/* Métodos activos */}
+      <div className="space-y-1">
+        {TODOS_METODOS.map(m => {
+          const activo = metodosActivos.includes(m)
+          return (
+            <div key={m} className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-sm flex items-center justify-center flex-shrink-0 ${
+                activo ? 'bg-dorfin-green/20' : 'bg-dorfin-border/20'
+              }`}>
+                {activo
+                  ? <Check size={8} className="text-dorfin-green" />
+                  : <span className="text-[8px] text-dorfin-faint">✗</span>
+                }
+              </div>
+              <span className={`text-[10px] ${activo ? 'text-dorfin-text' : 'text-dorfin-faint'}`}>{m}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function SheetMedidas({ semana, form, setForm, onClose, onGuardar, isPending, user, edad, cuerpoFormPrevio }: SheetMedidasProps) {
+  const [avanzadosAbiertos, setAvanzadosAbiertos] = useState(false)
+
+  // Calcular medidas en tiempo real para preview y barra de precisión
+  const { resultado, advertencias, metodosNombres, confianza } = useMemo(() => {
+    if (!user?.sexo || !user?.altura || !user?.peso) {
+      return { resultado: null, advertencias: [], metodosNombres: [], confianza: 0 }
+    }
+
+    const n = (k: string): number | undefined => {
+      const v = form[k] ?? cuerpoFormPrevio[k]
+      return v ? Number(v) : undefined
+    }
+    const cuello  = n('cuello')
+    const cintura = n('cintura')
+    const abdomen = n('abdomen')
+    const cadera  = n('cadera')
+
+    // Construir objeto para validación (incluye todos los campos)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const paraValidar: any = {
+      sexo:   user.sexo,
+      peso:   user.peso,
+      altura: user.altura,
+    }
+    Object.entries(form).forEach(([k, v]) => {
+      const num = parseFloat(v)
+      if (!isNaN(num) && num > 0) paraValidar[k] = num
+    })
+
+    const advertencias = validarMedidas(paraValidar)
+
+    if (!cuello || !cintura || !abdomen || !cadera) {
+      return { resultado: null, advertencias, metodosNombres: [], confianza: 0 }
+    }
+
+    const medidasCalculo: MedidasCorporales = {
+      sexo:            user.sexo as 'hombre' | 'mujer',
+      edad,
+      altura:          user.altura,
+      peso:            n('peso_kg') ?? user.peso,
+      cuello, cintura, abdomen, cadera,
+      hombros:         n('hombros'),
+      pecho:           n('pecho'),
+      bicep_der:       n('bicep_der'),
+      bicep_izq:       n('bicep_izq'),
+      muslo_der:       n('muslo_der'),
+      muslo_izq:       n('muslo_izq'),
+      pantorrilla_der: n('pantorrilla_der'),
+      pantorrilla_izq: n('pantorrilla_izq'),
+      antebrazo_der:   n('antebrazo_der'),
+      antebrazo_izq:   n('antebrazo_izq'),
+      muneca:          n('muneca'),
+      tobillo:         n('tobillo'),
+      anchura_hombros: n('anchura_hombros'),
+      anchura_cadera:  n('anchura_cadera'),
+      altura_sentado:  n('altura_sentado'),
+    }
+
+    const resultado = calcularGrasaCorporal(medidasCalculo)
+    return {
+      resultado,
+      advertencias,
+      metodosNombres: resultado.metodos.map(m => m.nombre),
+      confianza:      resultado.confianza,
+    }
+  }, [form, user, edad, cuerpoFormPrevio])
+
+  const oblFaltantes = GRUPO_OBLIGATORIOS.filter(c => !form[c.key])
+  const puedeGuardar = oblFaltantes.length === 0
+  const colorCat     = resultado ? getColorCategoria(resultado.categoria) : '#39FF14'
+
+  // Construir advertencias por campo para pasar a cada CampoMedida
+  const advAll = advertencias
+
+  return (
+    <>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/70 z-[60]" onClick={onClose} />
+      <motion.div
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 26, stiffness: 300 }}
+        className="fixed bottom-0 left-0 right-0 z-[70] bg-dorfin-card rounded-t-3xl max-w-md mx-auto"
+        style={{ maxHeight: '92dvh', display: 'flex', flexDirection: 'column' }}
+      >
+        {/* Header fijo */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
+          <div>
+            <p className="text-dorfin-muted text-[10px] uppercase tracking-widest">Registro semanal</p>
+            <h2 className="text-dorfin-text font-display text-2xl leading-tight">Semana {semana}</h2>
+          </div>
+          <button onClick={onClose}
+            className="w-9 h-9 rounded-xl bg-dorfin-surface border border-dorfin-border flex items-center justify-center">
+            <X size={17} className="text-dorfin-muted" />
+          </button>
+        </div>
+
+        {/* Scroll */}
+        <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-4">
+
+          {/* Barra de precisión */}
+          <BarraPrecision confianza={confianza} metodosActivos={metodosNombres} />
+
+          {/* Peso — siempre primero, siempre visible */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] text-dorfin-muted uppercase tracking-widest">Peso actual</p>
+              <span className="text-[10px] text-dorfin-faint">Perfil: {user?.peso ?? '—'} kg</span>
+            </div>
+            <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+              form.peso_kg ? 'border-dorfin-green/30 bg-dorfin-green/5' : 'border-dorfin-border bg-dorfin-surface/30'
+            }`}>
+              <div className={`w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 ${
+                form.peso_kg ? 'bg-dorfin-green border-dorfin-green' : 'border-dorfin-border'
+              }`}>
+                {form.peso_kg && <Check size={9} className="text-dorfin-bg" />}
+              </div>
+              <div className="flex-1">
+                <p className="text-dorfin-text text-sm font-medium">Peso</p>
+                <p className="text-dorfin-faint text-[10px]">Actualiza si cambió desde el perfil</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input type="number" inputMode="decimal" placeholder="—"
+                  value={form.peso_kg ?? ''}
+                  onChange={e => setForm({ ...form, peso_kg: e.target.value })}
+                  className={`w-16 text-center text-sm py-1.5 px-2 rounded-lg outline-none bg-dorfin-bg border transition-colors ${
+                    form.peso_kg ? 'border-dorfin-green/40 text-dorfin-text' : 'border-dorfin-border text-dorfin-text'
+                  }`}
+                  style={{ width: 60 }}
+                />
+                <span className="text-dorfin-faint text-[11px] w-5">kg</span>
+              </div>
+            </div>
+          </div>
+
+          {/* GRUPO 1 — Obligatorios */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-[10px] text-dorfin-muted uppercase tracking-widest">Obligatorios</p>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-dorfin-green/10 text-dorfin-green border border-dorfin-green/20 font-semibold">
+                activan US Navy
+              </span>
+            </div>
+            <div className="space-y-2">
+              {GRUPO_OBLIGATORIOS.map(campo => (
+                <CampoMedida key={campo.key} campo={campo} unit="cm"
+                  form={form} setForm={setForm} advertencias={advAll} />
+              ))}
+            </div>
+          </div>
+
+          {/* Preview en tiempo real — aparece al completar obligatorios */}
+          <AnimatePresence>
+            {resultado && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
+                className="rounded-2xl border p-4"
+                style={{ background: `${colorCat}0d`, borderColor: `${colorCat}30` }}>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-dorfin-muted text-[10px] uppercase tracking-widest">Vista previa</p>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+                    style={{ color: colorCat, borderColor: `${colorCat}50`, background: `${colorCat}15` }}>
+                    Confianza {resultado.confianza}%
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className="font-display text-4xl leading-none" style={{ color: colorCat }}>
+                    {resultado.porcentaje}
+                  </span>
+                  <span className="font-display text-xl" style={{ color: colorCat }}>%</span>
+                  <span className="text-dorfin-faint text-xs ml-2">± {resultado.margenError}%</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1">
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorCat }} />
+                  <p className="text-xs font-medium" style={{ color: colorCat }}>{resultado.categoria}</p>
+                </div>
+                <p className="text-dorfin-faint text-[10px] mt-2">
+                  Métodos activos: {resultado.metodos.map(m => m.nombre).join(' · ')}
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* GRUPO 2 — Recomendados */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-[10px] text-dorfin-muted uppercase tracking-widest">Recomendados</p>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-dorfin-purple/10 text-dorfin-purple-light border border-dorfin-purple/20 font-semibold">
+                mejoran precisión
+              </span>
+            </div>
+            <div className="space-y-2">
+              {GRUPO_RECOMENDADOS.map(campo => (
+                <CampoMedida key={campo.key} campo={campo} unit="cm"
+                  form={form} setForm={setForm} advertencias={advAll} />
+              ))}
+            </div>
+          </div>
+
+          {/* GRUPO 3 — Avanzados (colapsado por defecto) */}
+          <div>
+            <button
+              onClick={() => setAvanzadosAbiertos(!avanzadosAbiertos)}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-dorfin-border/50 bg-dorfin-surface/20 transition-colors hover:border-dorfin-border">
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] text-dorfin-faint uppercase tracking-widest">Avanzados</p>
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-dorfin-surface text-dorfin-faint border border-dorfin-border/30">
+                  estructura corporal
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {GRUPO_AVANZADOS.some(c => form[c.key]) && (
+                  <div className="w-4 h-4 rounded-full bg-dorfin-green/20 flex items-center justify-center">
+                    <Check size={8} className="text-dorfin-green" />
+                  </div>
+                )}
+                {avanzadosAbiertos
+                  ? <ChevronUp size={14} className="text-dorfin-faint" />
+                  : <ChevronDown size={14} className="text-dorfin-faint" />
+                }
+              </div>
+            </button>
+            <AnimatePresence>
+              {avanzadosAbiertos && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden">
+                  <div className="pt-2 space-y-2">
+                    <p className="text-dorfin-faint text-[10px] px-1 leading-relaxed">
+                      Estas medidas permiten ajustar el modelo por estructura ósea y proporcionalidad corporal.
+                      Aumentan la confianza hasta 100%.
+                    </p>
+                    {GRUPO_AVANZADOS.map(campo => (
+                      <CampoMedida key={campo.key} campo={campo} unit="cm"
+                        form={form} setForm={setForm} advertencias={advAll} />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+        </div>
+
+        {/* Footer fijo */}
+        <div className="flex-shrink-0 px-5 pb-8 pt-3 border-t border-dorfin-border/30 space-y-2">
+          {!puedeGuardar && (
+            <p className="text-center text-[11px] text-amber-400">
+              Faltan obligatorias: {oblFaltantes.map(c => c.label).join(', ')}
+            </p>
+          )}
+          <button
+            onClick={onGuardar}
+            disabled={isPending}
+            className="w-full btn-primary flex items-center justify-center gap-2 disabled:opacity-50">
+            {isPending
+              ? <span className="text-sm">Guardando...</span>
+              : <><Check size={16} /> Guardar medidas de la semana</>
+            }
+          </button>
+          <button onClick={onClose}
+            className="w-full py-2.5 rounded-xl text-dorfin-faint text-sm border border-dorfin-border/30 bg-transparent">
+            Cancelar
+          </button>
+        </div>
+      </motion.div>
+    </>
+  )
+}
+
 export default function MesocicloPage() {
   const { data: meso, isLoading } = useMesocicloActivo()
   const createMeso = useCreateMesociclo()
   const agregarMedidas = useAgregarMedidas()
   const qc = useQueryClient()
   const user = useAuthStore((s) => s.user)
-  const { getHistorial, saveHistorial } = useGrasaCorporal()
+  const { getHistorial, saveHistorial, saveMedidas } = useGrasaCorporal()
 
   // Mesociclo states
   const [showCreate, setShowCreate]             = useState(false)
@@ -269,15 +719,58 @@ export default function MesocicloPage() {
 
   function handleGuardarMedidas() {
     if (!meso) return
+
+    // Convertir form a números, incluyendo TODOS los campos (obligatorios + recomendados + avanzados)
     const medidas: Record<string, number> = {}
-    Object.entries(medidasForm).forEach(([k, v]) => { if (v) medidas[k] = Number(v) })
+    Object.entries(medidasForm).forEach(([k, v]) => {
+      const n = parseFloat(v)
+      if (!isNaN(n) && n > 0) medidas[k] = n
+    })
+
     agregarMedidas.mutate(
       { id: meso.id, semana: semanaSeleccionada, mes: mesSeleccionado, medidas },
       { onSuccess: () => {
-        // Sincronizar con cuerpoForm
+        // 1. Sincronizar cuerpoForm con TODOS los campos nuevos
         const newForm: Record<string, string> = {}
         Object.entries(medidas).forEach(([k, v]) => { newForm[k] = String(v) })
         setCuerpoForm(prev => ({ ...prev, ...newForm }))
+
+        // 2. Guardar medidas actuales en localStorage (fuente de verdad del formulario)
+        saveMedidas(newForm)
+
+        // 3. Si hay resultado de grasa calculable con los datos actuales → guardar en historial
+        //    Recalcular con los datos del formulario actualizado (sin esperar re-render)
+        if (user?.sexo && user?.altura && user?.peso && medidas.cuello && medidas.cintura && medidas.abdomen && medidas.cadera) {
+          const n = (k: string) => medidas[k] ?? (cuerpoForm[k] ? Number(cuerpoForm[k]) : undefined)
+          const medidasCalculo: MedidasCorporales = {
+            sexo:             user.sexo as 'hombre' | 'mujer',
+            edad,
+            altura:           user.altura,
+            peso:             medidas.peso_kg ?? user.peso,
+            cuello:           medidas.cuello,
+            cintura:          medidas.cintura,
+            abdomen:          medidas.abdomen,
+            cadera:           medidas.cadera,
+            hombros:          n('hombros'),
+            pecho:            n('pecho'),
+            bicep_der:        n('bicep_der'),
+            bicep_izq:        n('bicep_izq'),
+            muslo_der:        n('muslo_der'),
+            muslo_izq:        n('muslo_izq'),
+            pantorrilla_der:  n('pantorrilla_der'),
+            pantorrilla_izq:  n('pantorrilla_izq'),
+            antebrazo_der:    n('antebrazo_der'),
+            antebrazo_izq:    n('antebrazo_izq'),
+            muneca:           n('muneca'),
+            tobillo:          n('tobillo'),
+            anchura_hombros:  n('anchura_hombros'),
+            anchura_cadera:   n('anchura_cadera'),
+            altura_sentado:   n('altura_sentado'),
+          }
+          const resultado = calcularGrasaCorporal(medidasCalculo)
+          saveHistorial(resultado, medidas, medidas.peso_kg ?? user.peso)
+        }
+
         setShowMedidas(false)
         setMedidasForm({})
       }}
@@ -285,8 +778,8 @@ export default function MesocicloPage() {
   }
 
   function handleGuardarGrasa() {
-    if (!resultadoGrasa) return
-    saveHistorial(resultadoGrasa, { ...cuerpoForm, peso: user?.peso, altura: user?.altura })
+    if (!resultadoGrasa || !user?.peso) return
+    saveHistorial(resultadoGrasa, { ...cuerpoForm }, user.peso)
     setCuerpoTab('resultado')
   }
 
@@ -667,48 +1160,17 @@ export default function MesocicloPage() {
 
         {/* Sheet — Registrar medidas semana */}
         <AnimatePresence>
-          {showMedidas && (
-            <>
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 bg-black/60 z-[60]" onClick={() => setShowMedidas(false)} />
-              <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="fixed bottom-0 left-0 right-0 z-[70] bg-dorfin-card rounded-t-3xl p-6 pb-10 max-w-md mx-auto max-h-[85vh] overflow-y-auto">
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-dorfin-text font-display text-2xl">Semana {semanaSeleccionada}</h2>
-                  <button onClick={() => setShowMedidas(false)}><X size={20} className="text-dorfin-muted" /></button>
-                </div>
-                <p className="text-dorfin-muted text-xs mb-5">Registra tus medidas en cm</p>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 py-2 pb-4 mb-2 border-b border-dorfin-border">
-                    <div className="flex-1">
-                      <p className="text-dorfin-text text-sm font-medium">Peso actual</p>
-                      <p className="text-dorfin-faint text-xs">kg</p>
-                    </div>
-                    <input type="number" placeholder="—"
-                      className="w-20 bg-dorfin-surface border border-dorfin-border rounded-xl text-center text-dorfin-text text-sm py-2 outline-none focus:border-dorfin-green transition-colors"
-                      value={medidasForm['peso_kg'] ?? ''}
-                      onChange={e => setMedidasForm({ ...medidasForm, peso_kg: e.target.value })} />
-                  </div>
-                  {MEDIDAS_CORPORALES_LIST.map(({ key, label }) => (
-                    <div key={key} className="flex items-center gap-3 py-1">
-                      <div className="flex-1"><p className="text-dorfin-text text-sm font-medium">{label}</p></div>
-                      <div className="flex items-center gap-2">
-                        <input type="number" placeholder="—"
-                          className="w-20 bg-dorfin-surface border border-dorfin-border rounded-xl text-center text-dorfin-text text-sm py-2 outline-none focus:border-dorfin-green transition-colors"
-                          value={medidasForm[key] ?? ''}
-                          onChange={e => setMedidasForm({ ...medidasForm, [key]: e.target.value })} />
-                        <span className="text-dorfin-faint text-xs w-4">cm</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={handleGuardarMedidas} disabled={agregarMedidas.isPending} className="btn-primary w-full mt-6">
-                  <Check size={16} className="inline mr-2" /> Guardar medidas
-                </button>
-              </motion.div>
-            </>
-          )}
+          {showMedidas && <SheetMedidas
+            semana={semanaSeleccionada}
+            form={medidasForm}
+            setForm={setMedidasForm}
+            onClose={() => { setShowMedidas(false); setMedidasForm({}) }}
+            onGuardar={handleGuardarMedidas}
+            isPending={agregarMedidas.isPending}
+            user={user}
+            edad={edad}
+            cuerpoFormPrevio={cuerpoForm}
+          />}
         </AnimatePresence>
 
         {/* Sheet — Ver historial semana */}
